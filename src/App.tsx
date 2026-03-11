@@ -49,6 +49,12 @@ function App() {
     setOptions(o => ({ ...o, transposeSteps: steps }));
   }, []);
 
+  const handleUpdateSong = useCallback((updated: Song) => {
+    const allSongs = upsertSong(updated);
+    setSongs(allSongs);
+    setActiveSong(updated);
+  }, []);
+
   // Compute the displayed key (after transposition) for the options panel
   const displayedKey = activeSong
     ? transposeSong(activeSong, options.transposeSteps).key
@@ -114,6 +120,7 @@ function App() {
                   song={activeSong}
                   options={options}
                   printRef={printRef}
+                  onUpdateSong={handleUpdateSong}
                 />
               </div>
 

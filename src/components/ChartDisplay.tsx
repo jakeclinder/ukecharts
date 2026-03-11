@@ -1,23 +1,21 @@
-import { useMemo } from 'react';
-import type { Song, Section, DisplayOptions } from '../types';
-import { transposeSong } from '../lib/transpose';
-import { convertChordNotation } from '../lib/transpose';
+import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
+import type { Song, Section, Line, ChordPosition, DisplayOptions } from '../types';
+import { transposeSong, convertChordNotation } from '../lib/transpose';
 import { ChordDiagram } from './ChordDiagram';
 
 interface Props {
   song: Song;
   options: DisplayOptions;
   printRef?: React.RefObject<HTMLDivElement>;
+  onUpdateSong?: (song: Song) => void;
 }
 
-export function ChartDisplay({ song, options, printRef }: Props) {
-  // Apply transposition
+export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
   const transposed = useMemo(
     () => transposeSong(song, options.transposeSteps),
     [song, options.transposeSteps]
   );
 
-  // Collect unique chords for condensed view header
   const allChords = useMemo(() => {
     const seen = new Set<string>();
     const result: string[] = [];
@@ -27,7 +25,7 @@ export function ChartDisplay({ song, options, printRef }: Props) {
           const displayed = convertChordNotation(cp.chord, options.notation, transposed.key);
           if (!seen.has(displayed)) {
             seen.add(displayed);
-            result.push(cp.chord); // keep original for diagram lookup
+            result.push(cp.chord);
           }
         });
       });
@@ -37,14 +35,10 @@ export function ChartDisplay({ song, options, printRef }: Props) {
 
   const sections = useMemo(() => {
     if (options.layoutMode === 'condensed' && options.chorusMode === 'reference') {
-      // Show each unique section type once; subsequent choruses are replaced with a reference
       let chorusShown = false;
       return transposed.sections.map(s => {
         if (s.type === 'chorus') {
-          if (!chorusShown) {
-            chorusShown = true;
-            return { section: s, isReference: false };
-          }
+          if (!chorusShown) { chorusShown = true; return { section: s, isReference: false }; }
           return { section: s, isReference: true };
         }
         return { section: s, isReference: false };
@@ -52,6 +46,31 @@ export function ChartDisplay({ song, options, printRef }: Props) {
     }
     return transposed.sections.map(s => ({ section: s, isReference: false }));
   }, [transposed, options]);
+
+  // Update a line in the original (pre-transposition) song.
+  // We preserve original chord names and only update positions + lyrics.
+  const handleUpdateLine = useCallback((sectionIdx: number, lineIdx: number, updatedLine: Line) => {
+    if (!onUpdateSong) return;
+    const originalLine = song.sections[sectionIdx]?.lines[lineIdx];
+    if (!originalLine) return;
+    const merged: Line = {
+      lyrics: updatedLine.lyrics,
+      chords: updatedLine.chords.map((cp, i) => ({
+        chord: originalLine.chords[i]?.chord ?? cp.chord,
+        position: cp.position,
+      })),
+    };
+    onUpdateSong({
+      ...song,
+      updatedAt: Date.now(),
+      sections: song.sections.map((s, si) =>
+        si !== sectionIdx ? s : {
+          ...s,
+          lines: s.lines.map((l, li) => li !== lineIdx ? l : merged),
+        }
+      ),
+    });
+  }, [song, onUpdateSong]);
 
   return (
     <div ref={printRef} className="font-sans">
@@ -105,9 +124,11 @@ export function ChartDisplay({ song, options, printRef }: Props) {
           <SectionBlock
             key={section.id + idx}
             section={section}
+            sectionIdx={idx}
             isReference={isReference}
             options={options}
             songKey={transposed.key}
+            onUpdateLine={onUpdateSong ? handleUpdateLine : undefined}
           />
         ))}
       </div>
@@ -119,37 +140,59 @@ export function ChartDisplay({ song, options, printRef }: Props) {
 
 interface SectionBlockProps {
   section: Section;
+  sectionIdx: number;
   isReference: boolean;
   options: DisplayOptions;
   songKey: string;
+  onUpdateLine?: (sectionIdx: number, lineIdx: number, updatedLine: Line) => void;
 }
 
-function SectionBlock({ section, isReference, options, songKey }: SectionBlockProps) {
+function SectionBlock({ section, sectionIdx, isReference, options, songKey, onUpdateLine }: SectionBlockProps) {
+  const handleUpdateLine = useCallback((lineIdx: number, updatedLine: Line) => {
+    onUpdateLine?.(sectionIdx, lineIdx, updatedLine);
+  }, [sectionIdx, onUpdateLine]);
+
   return (
     <div>
       <h2 className="text-xs font-semibold uppercase tracking-widest text-stone-400 mb-2">
         {section.label}
       </h2>
-
       {isReference ? (
         <p className="text-stone-400 italic text-sm">(See {section.label} above)</p>
       ) : options.layoutMode === 'dad' ? (
-        <DadLayout section={section} options={options} songKey={songKey} />
+        <DadLayout
+          section={section}
+          options={options}
+          songKey={songKey}
+          onUpdateLine={onUpdateLine ? handleUpdateLine : undefined}
+        />
       ) : (
-        <CondensedLayout section={section} options={options} songKey={songKey} />
+        <CondensedLayout
+          section={section}
+          options={options}
+          songKey={songKey}
+          onUpdateLine={onUpdateLine ? handleUpdateLine : undefined}
+        />
       )}
     </div>
   );
 }
 
 // ─── Dad Layout ───────────────────────────────────────────────────────────────
-// Chord diagrams positioned above the lyric they occur on, inline
 
-function DadLayout({ section, options, songKey }: { section: Section; options: DisplayOptions; songKey: string }) {
+function DadLayout({
+  section, options, songKey, onUpdateLine,
+}: {
+  section: Section;
+  options: DisplayOptions;
+  songKey: string;
+  onUpdateLine?: (lineIdx: number, updatedLine: Line) => void;
+}) {
   return (
     <div className="space-y-4">
       {section.lines.map((line, li) => {
         const hasChords = line.chords.length > 0;
+        const handleUpdate = onUpdateLine ? (updated: Line) => onUpdateLine(li, updated) : undefined;
 
         return (
           <div key={li}>
@@ -174,18 +217,23 @@ function DadLayout({ section, options, songKey }: { section: Section; options: D
               </div>
             )}
 
-            {/* Inline chord names over lyrics */}
+            {/* Draggable chord names row (diagram style: none) */}
             {hasChords && options.diagramStyle === 'none' && (
-              <ChordOverLyrics line={line} options={options} songKey={songKey} />
+              <ChordOverLyrics
+                line={line}
+                options={options}
+                songKey={songKey}
+                onUpdateLine={handleUpdate}
+              />
             )}
 
             {/* Lyrics */}
-            {options.diagramStyle !== 'none' && line.lyrics && (
-              <p className="text-stone-800 leading-relaxed">{line.lyrics || '\u00A0'}</p>
-            )}
-
-            {options.diagramStyle === 'none' && !hasChords && (
-              <p className="text-stone-800 leading-relaxed">{line.lyrics || '\u00A0'}</p>
+            {line.lyrics && (
+              <EditableLyrics
+                text={line.lyrics}
+                onSave={handleUpdate ? (t) => handleUpdate({ ...line, lyrics: t }) : undefined}
+                className="text-stone-800 leading-relaxed"
+              />
             )}
           </div>
         );
@@ -195,48 +243,201 @@ function DadLayout({ section, options, songKey }: { section: Section; options: D
 }
 
 // ─── Condensed Layout ─────────────────────────────────────────────────────────
-// Just lyrics with chord markers above them (classic chart style)
 
-function CondensedLayout({ section, options, songKey }: { section: Section; options: DisplayOptions; songKey: string }) {
+function CondensedLayout({
+  section, options, songKey, onUpdateLine,
+}: {
+  section: Section;
+  options: DisplayOptions;
+  songKey: string;
+  onUpdateLine?: (lineIdx: number, updatedLine: Line) => void;
+}) {
   return (
     <div className="font-mono text-sm space-y-2">
-      {section.lines.map((line, li) => (
-        <div key={li}>
-          {line.chords.length > 0 && (
-            <ChordOverLyrics line={line} options={options} songKey={songKey} />
-          )}
-          {line.lyrics && (
-            <div className="text-stone-800">{line.lyrics}</div>
-          )}
-        </div>
-      ))}
+      {section.lines.map((line, li) => {
+        const handleUpdate = onUpdateLine ? (updated: Line) => onUpdateLine(li, updated) : undefined;
+        return (
+          <div key={li}>
+            {line.chords.length > 0 && (
+              <ChordOverLyrics
+                line={line}
+                options={options}
+                songKey={songKey}
+                onUpdateLine={handleUpdate}
+              />
+            )}
+            {line.lyrics && (
+              <EditableLyrics
+                text={line.lyrics}
+                onSave={handleUpdate ? (t) => handleUpdate({ ...line, lyrics: t }) : undefined}
+                className="text-stone-800"
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 // ─── Chord Over Lyrics ────────────────────────────────────────────────────────
-// Renders chords positioned above lyrics at the correct character positions
+// Each chord rendered as an absolutely-positioned span (ch units = monospace chars).
+// Drag left/right to reposition a chord over the lyrics.
 
-function ChordOverLyrics({ line, options, songKey }: { line: { lyrics: string; chords: { chord: string; position: number }[] }; options: DisplayOptions; songKey: string }) {
-  const chords = line.chords;
+function ChordOverLyrics({
+  line, options, songKey, onUpdateLine,
+}: {
+  line: Line;
+  options: DisplayOptions;
+  songKey: string;
+  onUpdateLine?: (updatedLine: Line) => void;
+}) {
+  const lineRef = useRef(line);
+  lineRef.current = line;
 
-  // Build the chord line by placing chord names at correct positions
-  // We'll use a simple approach: build a string of spaces and insert chords
-  let chordLine = '';
-  const sortedChords = [...chords].sort((a, b) => a.position - b.position);
+  const onUpdateLineRef = useRef(onUpdateLine);
+  onUpdateLineRef.current = onUpdateLine;
 
-  for (const cp of sortedChords) {
-    const label = convertChordNotation(cp.chord, options.notation, songKey);
-    const pos = Math.max(0, cp.position);
-    if (chordLine.length < pos) {
-      chordLine += ' '.repeat(pos - chordLine.length);
+  // Measure actual monospace char width for accurate drag conversion
+  const measureRef = useRef<HTMLSpanElement>(null);
+  const charWidthRef = useRef<number>(8.4);
+  useEffect(() => {
+    if (measureRef.current) {
+      charWidthRef.current = measureRef.current.getBoundingClientRect().width;
     }
-    chordLine += label + ' ';
+  });
+
+  const dragRef = useRef<{
+    startX: number;
+    originalChords: ChordPosition[];
+    chordIdx: number;
+  } | null>(null);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent, originalIdx: number) => {
+    if (!onUpdateLineRef.current) return;
+    e.preventDefault();
+    dragRef.current = {
+      startX: e.clientX,
+      originalChords: lineRef.current.chords.map(cp => ({ ...cp })),
+      chordIdx: originalIdx,
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!dragRef.current || !onUpdateLineRef.current) return;
+      const { startX, originalChords, chordIdx } = dragRef.current;
+      const charWidth = charWidthRef.current || 8.4;
+      const delta = Math.round((e.clientX - startX) / charWidth);
+      const newPos = Math.max(0, originalChords[chordIdx].position + delta);
+      const newChords = originalChords.map((cp, i) =>
+        i === chordIdx ? { ...cp, position: newPos } : cp
+      );
+      onUpdateLineRef.current({ ...lineRef.current, chords: newChords });
+    };
+
+    const handleMouseUp = () => {
+      dragRef.current = null;
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, []);
+
+  const sortedIndexedChords = useMemo(
+    () => line.chords.map((cp, idx) => ({ cp, idx })).sort((a, b) => a.cp.position - b.cp.position),
+    [line.chords]
+  );
+
+  const canDrag = !!onUpdateLine;
+
+  return (
+    <div className="font-mono text-sm relative select-none" style={{ height: '1.4em' }}>
+      {/* Hidden span to measure actual character width */}
+      <span
+        ref={measureRef}
+        aria-hidden
+        className="absolute opacity-0 pointer-events-none font-mono text-sm"
+      >
+        X
+      </span>
+
+      {sortedIndexedChords.map(({ cp, idx }) => {
+        const label = convertChordNotation(cp.chord, options.notation, songKey);
+        return (
+          <span
+            key={idx}
+            style={{ left: `${cp.position}ch`, top: 0 }}
+            className={`absolute text-amber-700 font-semibold whitespace-nowrap${canDrag ? ' cursor-grab active:cursor-grabbing' : ''}`}
+            onMouseDown={canDrag ? (e) => handleMouseDown(e, idx) : undefined}
+            title={canDrag ? 'Drag to reposition' : undefined}
+          >
+            {label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Editable Lyrics ──────────────────────────────────────────────────────────
+// Click to edit a lyric line in place. Press Enter or click away to save.
+
+function EditableLyrics({
+  text,
+  onSave,
+  className,
+}: {
+  text: string;
+  onSave?: (newText: string) => void;
+  className?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(text);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!editing) setValue(text);
+  }, [text, editing]);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  const commit = useCallback(() => {
+    setEditing(false);
+    if (value !== text) onSave?.(value);
+  }, [value, text, onSave]);
+
+  if (!onSave) {
+    return <p className={className}>{text || '\u00A0'}</p>;
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="text"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') { setValue(text); setEditing(false); }
+        }}
+        className={`${className} w-full bg-amber-50 border-b border-amber-300 outline-none`}
+        style={{ fontFamily: 'inherit', fontSize: 'inherit' }}
+      />
+    );
   }
 
   return (
-    <div className="font-mono text-sm">
-      <div className="text-amber-700 font-semibold whitespace-pre">{chordLine}</div>
-    </div>
+    <p
+      className={`${className} cursor-text hover:bg-amber-50 rounded px-0.5 -mx-0.5 transition-colors`}
+      onClick={() => setEditing(true)}
+      title="Click to edit"
+    >
+      {text || '\u00A0'}
+    </p>
   );
 }

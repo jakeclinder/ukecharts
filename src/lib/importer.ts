@@ -22,20 +22,33 @@ export async function fetchChartFromUrl(url: string): Promise<string> {
 
 /**
  * Convert HTML string to plain text suitable for chord parsing.
- * Preserves line breaks from <br>, <p>, <div> elements.
+ * Strips navigation, headers, footers, and tries to find main song content.
  */
 function htmlToText(html: string): string {
-  // Replace block elements with newlines
+  // Remove entire blocks that are never part of a song chart
   let text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+    .replace(/<header[\s\S]*?<\/header>/gi, '')
+    .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+    .replace(/<aside[\s\S]*?<\/aside>/gi, '');
+
+  // Try to narrow down to the main content area
+  const mainMatch =
+    text.match(/<main[^>]*>([\s\S]*?)<\/main>/i) ??
+    text.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
+  if (mainMatch) {
+    text = mainMatch[1];
+  }
+
+  // Replace block elements with newlines
+  text = text
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')
     .replace(/<\/div>/gi, '\n')
     .replace(/<\/li>/gi, '\n')
     .replace(/<\/tr>/gi, '\n');
-
-  // Remove script and style blocks entirely
-  text = text.replace(/<script[\s\S]*?<\/script>/gi, '');
-  text = text.replace(/<style[\s\S]*?<\/style>/gi, '');
 
   // Remove all remaining tags
   text = text.replace(/<[^>]+>/g, '');
