@@ -196,25 +196,14 @@ function DadLayout({
 
         return (
           <div key={li}>
-            {/* Chord diagrams row */}
+            {/* Draggable chord diagrams row */}
             {hasChords && options.diagramStyle !== 'none' && (
-              <div className="flex gap-3 mb-1 flex-wrap">
-                {line.chords.map((cp, ci) => (
-                  <div key={ci} className="flex flex-col items-center">
-                    <ChordDiagram
-                      chord={cp.chord}
-                      instrument={options.instrument}
-                      style={options.diagramStyle}
-                      size="sm"
-                    />
-                    {options.diagramStyle === 'visual' && (
-                      <span className="text-xs font-medium text-stone-500 mt-0.5">
-                        {convertChordNotation(cp.chord, options.notation, songKey)}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <DiagramRow
+                line={line}
+                options={options}
+                songKey={songKey}
+                onUpdateLine={handleUpdate}
+              />
             )}
 
             {/* Draggable chord names row (diagram style: none) */}
@@ -280,11 +269,10 @@ function CondensedLayout({
   );
 }
 
-// ─── Chord Over Lyrics ────────────────────────────────────────────────────────
-// Each chord rendered as an absolutely-positioned span (ch units = monospace chars).
-// Drag left/right to reposition a chord over the lyrics.
+// ─── Diagram Row ──────────────────────────────────────────────────────────────
+// Chord diagrams absolutely positioned at cp.position ch units — draggable.
 
-function ChordOverLyrics({
+function DiagramRow({
   line, options, songKey, onUpdateLine,
 }: {
   line: Line;
@@ -294,39 +282,78 @@ function ChordOverLyrics({
 }) {
   const lineRef = useRef(line);
   lineRef.current = line;
-
   const onUpdateLineRef = useRef(onUpdateLine);
   onUpdateLineRef.current = onUpdateLine;
 
-  // Measure actual monospace char width for accurate drag conversion
   const measureRef = useRef<HTMLSpanElement>(null);
   const charWidthRef = useRef<number>(8.4);
   useEffect(() => {
-    if (measureRef.current) {
-      charWidthRef.current = measureRef.current.getBoundingClientRect().width;
-    }
+    if (measureRef.current) charWidthRef.current = measureRef.current.getBoundingClientRect().width;
   });
 
+  const handleMouseDown = useDragChords(lineRef, onUpdateLineRef, charWidthRef);
+
+  const canDrag = !!onUpdateLine;
+  // Height: ascii diagrams are taller than visual SVG diagrams
+  const rowHeight = options.diagramStyle === 'ascii' ? '8.5rem' : '5.5rem';
+
+  return (
+    <div className="relative font-mono text-sm select-none mb-1" style={{ minHeight: rowHeight }}>
+      {/* Char-width measurement span */}
+      <span ref={measureRef} aria-hidden className="absolute opacity-0 pointer-events-none font-mono text-sm">X</span>
+
+      {line.chords.map((cp, ci) => (
+        <div
+          key={ci}
+          style={{ left: `${cp.position}ch`, top: 0, position: 'absolute' }}
+          className={`flex flex-col items-center${canDrag ? ' cursor-grab active:cursor-grabbing' : ''}`}
+          onMouseDown={canDrag ? (e) => handleMouseDown(e, ci) : undefined}
+          title={canDrag ? 'Drag to reposition' : undefined}
+        >
+          <ChordDiagram
+            chord={cp.chord}
+            instrument={options.instrument}
+            style={options.diagramStyle}
+            size="sm"
+          />
+          {options.diagramStyle === 'visual' && (
+            <span className="text-xs font-medium text-stone-500 mt-0.5 select-none">
+              {convertChordNotation(cp.chord, options.notation, songKey)}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Shared drag hook ─────────────────────────────────────────────────────────
+// Shared between ChordOverLyrics and DiagramRow.
+
+function useDragChords(
+  lineRef: React.MutableRefObject<Line>,
+  onUpdateLineRef: React.MutableRefObject<((updated: Line) => void) | undefined>,
+  charWidthRef: React.MutableRefObject<number>
+) {
   const dragRef = useRef<{
     startX: number;
     originalChords: ChordPosition[];
     chordIdx: number;
   } | null>(null);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent, originalIdx: number) => {
+  return useCallback((e: React.MouseEvent, chordIdx: number) => {
     if (!onUpdateLineRef.current) return;
     e.preventDefault();
     dragRef.current = {
       startX: e.clientX,
       originalChords: lineRef.current.chords.map(cp => ({ ...cp })),
-      chordIdx: originalIdx,
+      chordIdx,
     };
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!dragRef.current || !onUpdateLineRef.current) return;
       const { startX, originalChords, chordIdx } = dragRef.current;
-      const charWidth = charWidthRef.current || 8.4;
-      const delta = Math.round((e.clientX - startX) / charWidth);
+      const delta = Math.round((e.clientX - startX) / (charWidthRef.current || 8.4));
       const newPos = Math.max(0, originalChords[chordIdx].position + delta);
       const newChords = originalChords.map((cp, i) =>
         i === chordIdx ? { ...cp, position: newPos } : cp
@@ -342,7 +369,33 @@ function ChordOverLyrics({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+// ─── Chord Over Lyrics ────────────────────────────────────────────────────────
+// Each chord rendered as an absolutely-positioned span (ch units = monospace chars).
+// Drag left/right to reposition a chord over the lyrics.
+
+function ChordOverLyrics({
+  line, options, songKey, onUpdateLine,
+}: {
+  line: Line;
+  options: DisplayOptions;
+  songKey: string;
+  onUpdateLine?: (updatedLine: Line) => void;
+}) {
+  const lineRef = useRef(line);
+  lineRef.current = line;
+  const onUpdateLineRef = useRef(onUpdateLine);
+  onUpdateLineRef.current = onUpdateLine;
+
+  const measureRef = useRef<HTMLSpanElement>(null);
+  const charWidthRef = useRef<number>(8.4);
+  useEffect(() => {
+    if (measureRef.current) charWidthRef.current = measureRef.current.getBoundingClientRect().width;
+  });
+
+  const handleMouseDown = useDragChords(lineRef, onUpdateLineRef, charWidthRef);
 
   const sortedIndexedChords = useMemo(
     () => line.chords.map((cp, idx) => ({ cp, idx })).sort((a, b) => a.cp.position - b.cp.position),
