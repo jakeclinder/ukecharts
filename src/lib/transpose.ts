@@ -13,7 +13,7 @@ const NOTE_TO_INDEX: Record<string, number> = {
 // Keys that prefer flats
 const FLAT_KEYS = new Set(['F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb', 'Dm', 'Gm', 'Cm', 'Fm', 'Bbm', 'Ebm']);
 
-function preferFlats(key: string): boolean {
+export function preferFlats(key: string): boolean {
   const root = key.replace(/m.*$/, '');
   return FLAT_KEYS.has(root) || root.includes('b');
 }
