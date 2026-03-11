@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus, Music2, PanelLeft } from 'lucide-react';
+import { Plus, Music2, PanelLeft, RotateCcw, RotateCw } from 'lucide-react';
 import type { Song, DisplayOptions } from './types';
 import { DEFAULT_DISPLAY_OPTIONS } from './types';
 import { loadSongs, upsertSong, deleteSong, loadOptions, saveOptions } from './lib/storage';
@@ -24,6 +24,8 @@ function App() {
   const [showImport, setShowImport] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const printRef = useRef<HTMLDivElement>(null!);
+  const [past, setPast] = useState<Song[]>([]);
+  const [future, setFuture] = useState<Song[]>([]);
 
   // Persist options
   useEffect(() => {
@@ -50,10 +52,46 @@ function App() {
   }, []);
 
   const handleUpdateSong = useCallback((updated: Song) => {
+    setPast(p => activeSong ? [...p.slice(-49), activeSong] : p);
+    setFuture([]);
     const allSongs = upsertSong(updated);
     setSongs(allSongs);
     setActiveSong(updated);
-  }, []);
+  }, [activeSong]);
+
+  const handleUndo = useCallback(() => {
+    if (past.length === 0 || !activeSong) return;
+    const prev = past[past.length - 1];
+    setPast(p => p.slice(0, -1));
+    setFuture(f => [activeSong, ...f.slice(0, 49)]);
+    setSongs(upsertSong(prev));
+    setActiveSong(prev);
+  }, [past, activeSong]);
+
+  const handleRedo = useCallback(() => {
+    if (future.length === 0 || !activeSong) return;
+    const next = future[0];
+    setFuture(f => f.slice(1));
+    setPast(p => [...p.slice(-49), activeSong]);
+    setSongs(upsertSong(next));
+    setActiveSong(next);
+  }, [future, activeSong]);
+
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleUndo, handleRedo]);
 
   // Compute the displayed key (after transposition) for the options panel
   const displayedKey = activeSong
@@ -77,6 +115,26 @@ function App() {
           <span className="font-bold text-stone-800 text-lg tracking-tight">UkeCharts</span>
         </div>
 
+        {activeSong && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleUndo}
+              disabled={past.length === 0}
+              className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-500 hover:text-stone-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Undo (Ctrl+Z)"
+            >
+              <RotateCcw size={17} />
+            </button>
+            <button
+              onClick={handleRedo}
+              disabled={future.length === 0}
+              className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-500 hover:text-stone-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Redo (Ctrl+Y / Ctrl+Shift+Z)"
+            >
+              <RotateCw size={17} />
+            </button>
+          </div>
+        )}
         {activeSong && (
           <ExportMenu song={activeSong} options={options} printRef={printRef} />
         )}
@@ -103,7 +161,7 @@ function App() {
               <SongLibrary
                 songs={songs}
                 activeSongId={activeSong?.id ?? null}
-                onSelect={setActiveSong}
+                onSelect={(song) => { setPast([]); setFuture([]); setActiveSong(song); }}
                 onDelete={handleDelete}
               />
             </div>
