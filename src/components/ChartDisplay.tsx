@@ -72,6 +72,25 @@ export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
     });
   }, [song, onUpdateSong]);
 
+  // Replace all lines in a section (from the section-level textarea editor).
+  // New lyrics come from the textarea; chords are preserved by original line index.
+  const handleUpdateSection = useCallback((sectionIdx: number, newLines: Line[]) => {
+    if (!onUpdateSong) return;
+    const originalSection = song.sections[sectionIdx];
+    if (!originalSection) return;
+    const merged = newLines.map((line, i) => ({
+      lyrics: line.lyrics,
+      chords: originalSection.lines[i]?.chords ?? [],
+    }));
+    onUpdateSong({
+      ...song,
+      updatedAt: Date.now(),
+      sections: song.sections.map((s, si) =>
+        si !== sectionIdx ? s : { ...s, lines: merged }
+      ),
+    });
+  }, [song, onUpdateSong]);
+
   return (
     <div ref={printRef} className="font-sans">
       {/* Song header */}
@@ -129,6 +148,7 @@ export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
             options={options}
             songKey={transposed.key}
             onUpdateLine={onUpdateSong ? handleUpdateLine : undefined}
+            onUpdateSection={onUpdateSong ? handleUpdateSection : undefined}
           />
         ))}
       </div>
@@ -145,20 +165,43 @@ interface SectionBlockProps {
   options: DisplayOptions;
   songKey: string;
   onUpdateLine?: (sectionIdx: number, lineIdx: number, updatedLine: Line) => void;
+  onUpdateSection?: (sectionIdx: number, newLines: Line[]) => void;
 }
 
-function SectionBlock({ section, sectionIdx, isReference, options, songKey, onUpdateLine }: SectionBlockProps) {
+function SectionBlock({ section, sectionIdx, isReference, options, songKey, onUpdateLine, onUpdateSection }: SectionBlockProps) {
+  const [editingLyrics, setEditingLyrics] = useState(false);
+
   const handleUpdateLine = useCallback((lineIdx: number, updatedLine: Line) => {
     onUpdateLine?.(sectionIdx, lineIdx, updatedLine);
   }, [sectionIdx, onUpdateLine]);
 
   return (
     <div>
-      <h2 className="text-xs font-semibold uppercase tracking-widest text-stone-400 mb-2">
-        {section.label}
-      </h2>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-stone-400">
+          {section.label}
+        </h2>
+        {onUpdateSection && !isReference && !editingLyrics && (
+          <button
+            onClick={() => setEditingLyrics(true)}
+            className="text-xs text-stone-400 hover:text-stone-600 transition-colors"
+          >
+            edit lyrics
+          </button>
+        )}
+      </div>
+
       {isReference ? (
         <p className="text-stone-400 italic text-sm">(See {section.label} above)</p>
+      ) : editingLyrics ? (
+        <SectionLyricsTextarea
+          section={section}
+          onSave={(newLines) => {
+            onUpdateSection?.(sectionIdx, newLines);
+            setEditingLyrics(false);
+          }}
+          onCancel={() => setEditingLyrics(false)}
+        />
       ) : options.layoutMode === 'dad' ? (
         <DadLayout
           section={section}
@@ -174,6 +217,74 @@ function SectionBlock({ section, sectionIdx, isReference, options, songKey, onUp
           onUpdateLine={onUpdateLine ? handleUpdateLine : undefined}
         />
       )}
+    </div>
+  );
+}
+
+// ─── Section Lyrics Textarea ──────────────────────────────────────────────────
+// Full-section textarea editor: select/edit/delete across multiple lines freely.
+
+function SectionLyricsTextarea({
+  section,
+  onSave,
+  onCancel,
+}: {
+  section: Section;
+  onSave: (newLines: Line[]) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(
+    () => section.lines.map(l => l.lyrics).join('\n')
+  );
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setValue(e.target.value);
+    e.target.style.height = 'auto';
+    e.target.style.height = e.target.scrollHeight + 'px';
+  };
+
+  const handleSave = () => {
+    const newLyrics = value.split('\n');
+    const newLines: Line[] = newLyrics.map((lyrics, i) => ({
+      lyrics,
+      chords: section.lines[i]?.chords ?? [],
+    }));
+    onSave(newLines);
+  };
+
+  return (
+    <div>
+      <textarea
+        ref={ref}
+        value={value}
+        onChange={handleChange}
+        onKeyDown={e => { if (e.key === 'Escape') onCancel(); }}
+        className="w-full bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 outline-none resize-none font-mono text-sm text-stone-800 leading-relaxed"
+        style={{ minHeight: '4rem', overflow: 'hidden' }}
+      />
+      <div className="flex gap-2 mt-1.5">
+        <button
+          onClick={handleSave}
+          className="text-xs px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium transition-colors"
+        >
+          Save
+        </button>
+        <button
+          onClick={onCancel}
+          className="text-xs px-3 py-1.5 text-stone-500 hover:bg-stone-100 rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }

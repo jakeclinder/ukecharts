@@ -1,4 +1,4 @@
-export type NotationSystem = 'letters' | 'nashville' | 'uke-ascii' | 'guitar-ascii';
+export type NotationSystem = 'letters' | 'nashville';
 export type DiagramStyle = 'visual' | 'ascii' | 'none';
 export type LayoutMode = 'dad' | 'condensed';
 export type ChorusMode = 'full' | 'reference';
