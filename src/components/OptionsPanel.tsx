@@ -69,14 +69,12 @@ export function OptionsPanel({ options, onChange, songKey, onTranspose }: Props)
       {/* Chord notation */}
       <OptionGroup label="Chord Notation" icon={<AlignLeft size={12} />}>
         <ToggleGroup<NotationSystem>
-          options={['letters', 'nashville', 'uke-ascii', 'guitar-ascii']}
+          options={['letters', 'nashville']}
           value={options.notation}
           onChange={v => onChange(set(options, 'notation', v))}
           labels={{
-            letters: 'Letter names  (G, Am, F#)',
+            letters: 'Letter Names',
             nashville: 'Nashville  (1, 4, 5)',
-            'uke-ascii': 'Uke tabs',
-            'guitar-ascii': 'Guitar tabs',
           }}
         />
       </OptionGroup>
