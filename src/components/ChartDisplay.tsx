@@ -473,6 +473,7 @@ function DadLayout({
   );
 
   const canEdit = !!(onUpdateLine || onAddChord || onRemoveChord || onMoveChord);
+  const [pendingDelete, setPendingDelete] = useState<number | null>(null);
 
   return (
     <div className="space-y-4">
@@ -490,23 +491,26 @@ function DadLayout({
         }
 
         const handleUpdate = onUpdateLine ? (updated: Line) => onUpdateLine(li, updated) : undefined;
+        const isAboutToDelete = pendingDelete === li;
 
         return (
           <div key={li} ref={el => { lineRefs.current[li] = el; }} className="group/line relative">
-            {/* Delete line button — marked peer so siblings can react to its hover */}
+            {/* Delete line button */}
             {onDeleteLine && (
               <button
                 data-no-print
                 onClick={() => onDeleteLine(li)}
-                className="peer absolute right-1 top-1 z-10 text-stone-300 hover:text-red-500 transition-colors opacity-0 group-hover/line:opacity-100 text-base leading-none"
+                onMouseEnter={() => setPendingDelete(li)}
+                onMouseLeave={() => setPendingDelete(null)}
+                className={`absolute right-1 top-1 z-10 w-5 h-5 flex items-center justify-center rounded transition-all text-sm leading-none opacity-0 group-hover/line:opacity-100 ${isAboutToDelete ? 'bg-red-500 text-white scale-110' : 'text-stone-300 hover:text-red-500'}`}
                 title="Delete line"
               >
                 ×
               </button>
             )}
 
-            {/* Content wrapper — highlights on delete-button hover */}
-            <div className="pr-7 rounded-lg transition-colors peer-hover:bg-red-50 peer-hover:ring-1 peer-hover:ring-red-200">
+            {/* Content wrapper — highlights while delete is hovered */}
+            <div className={`pr-7 rounded-lg transition-all duration-150 ${isAboutToDelete ? 'bg-red-100 ring-2 ring-red-400 opacity-60' : ''}`}>
               {/* Diagram row */}
               {options.diagramStyle !== 'none' && (
                 <DiagramRow
