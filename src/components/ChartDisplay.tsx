@@ -151,6 +151,14 @@ export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
     );
   }, [song, updateSong]);
 
+  const handleAddLine = useCallback((sectionIdx: number) => {
+    updateSong(sectionIdx, lines => [...lines, { lyrics: '', chords: [] }]);
+  }, [updateSong]);
+
+  const handleDeleteLine = useCallback((sectionIdx: number, lineIdx: number) => {
+    updateSong(sectionIdx, lines => lines.filter((_, i) => i !== lineIdx));
+  }, [updateSong]);
+
   return (
     <div ref={printRef} className="font-sans">
       {/* Song header */}
@@ -212,6 +220,8 @@ export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
             onAddChord={onUpdateSong ? handleAddChord : undefined}
             onRemoveChord={onUpdateSong ? handleRemoveChord : undefined}
             onMoveChord={onUpdateSong ? handleMoveChord : undefined}
+            onAddLine={onUpdateSong ? handleAddLine : undefined}
+            onDeleteLine={onUpdateSong ? handleDeleteLine : undefined}
           />
         ))}
       </div>
@@ -232,11 +242,13 @@ interface SectionBlockProps {
   onAddChord?: (sectionIdx: number, lineIdx: number, chord: string) => void;
   onRemoveChord?: (sectionIdx: number, lineIdx: number, chordIdx: number) => void;
   onMoveChord?: (sectionIdx: number, fromLine: number, chordIdx: number, toLine: number, pos: number) => void;
+  onAddLine?: (sectionIdx: number) => void;
+  onDeleteLine?: (sectionIdx: number, lineIdx: number) => void;
 }
 
 function SectionBlock({
   section, sectionIdx, isReference, options, songKey,
-  onUpdateLine, onUpdateSection, onAddChord, onRemoveChord, onMoveChord,
+  onUpdateLine, onUpdateSection, onAddChord, onRemoveChord, onMoveChord, onAddLine, onDeleteLine,
 }: SectionBlockProps) {
   const [editingLyrics, setEditingLyrics] = useState(false);
 
@@ -254,6 +266,8 @@ function SectionBlock({
     ? (fromLine: number, ci: number, toLine: number, pos: number) =>
         onMoveChord(sectionIdx, fromLine, ci, toLine, pos)
     : undefined;
+  const addLine = onAddLine ? () => onAddLine(sectionIdx) : undefined;
+  const deleteLine = onDeleteLine ? (li: number) => onDeleteLine(sectionIdx, li) : undefined;
 
   return (
     <div>
@@ -291,6 +305,8 @@ function SectionBlock({
           onAddChord={addChord}
           onRemoveChord={removeChord}
           onMoveChord={moveChord}
+          onAddLine={addLine}
+          onDeleteLine={deleteLine}
         />
       ) : (
         <CondensedLayout
@@ -301,6 +317,8 @@ function SectionBlock({
           onAddChord={addChord}
           onRemoveChord={removeChord}
           onMoveChord={moveChord}
+          onAddLine={addLine}
+          onDeleteLine={deleteLine}
         />
       )}
     </div>
@@ -480,7 +498,7 @@ function useLayoutDrag(
 
 function DadLayout({
   section, options, songKey,
-  onUpdateLine, onAddChord, onRemoveChord, onMoveChord,
+  onUpdateLine, onAddChord, onRemoveChord, onMoveChord, onAddLine, onDeleteLine,
 }: {
   section: Section;
   options: DisplayOptions;
@@ -489,6 +507,8 @@ function DadLayout({
   onAddChord?: (lineIdx: number, chord: string) => void;
   onRemoveChord?: (lineIdx: number, chordIdx: number) => void;
   onMoveChord?: (fromLine: number, chordIdx: number, toLine: number, pos: number) => void;
+  onAddLine?: () => void;
+  onDeleteLine?: (lineIdx: number) => void;
 }) {
   const sectionRef = useRef(section);
   sectionRef.current = section;
@@ -512,11 +532,31 @@ function DadLayout({
       <span ref={measureRef} aria-hidden className="absolute opacity-0 pointer-events-none font-mono text-sm">X</span>
 
       {section.lines.map((line, li) => {
+        const isEmpty = !line.lyrics && line.chords.length === 0;
+        const hasPreview = dragState?.targetLine === li;
+        // Hide empty lines unless a chord is being dragged to them.
+        if (isEmpty && !hasPreview) {
+          // Still register the ref as null so drag detection skips it.
+          lineRefs.current[li] = null;
+          return null;
+        }
+
         const handleUpdate = onUpdateLine ? (updated: Line) => onUpdateLine(li, updated) : undefined;
 
         return (
-          <div key={li} ref={el => { lineRefs.current[li] = el; }}>
-            {/* Diagram row — always shown when editing so "+ chord" button is accessible */}
+          <div key={li} ref={el => { lineRefs.current[li] = el; }} className="group/line relative pr-7">
+            {/* Delete line button */}
+            {onDeleteLine && (
+              <button
+                onClick={() => onDeleteLine(li)}
+                className="absolute right-0 top-1 text-stone-300 hover:text-red-500 transition-colors opacity-0 group-hover/line:opacity-100 text-base leading-none"
+                title="Delete line"
+              >
+                ×
+              </button>
+            )}
+
+            {/* Diagram row */}
             {options.diagramStyle !== 'none' && (
               <DiagramRow
                 line={line}
@@ -557,6 +597,16 @@ function DadLayout({
           </div>
         );
       })}
+
+      {/* Add line button */}
+      {onAddLine && (
+        <button
+          onClick={onAddLine}
+          className="text-xs text-stone-400 hover:text-amber-600 transition-colors mt-1"
+        >
+          + add line
+        </button>
+      )}
     </div>
   );
 }
@@ -565,7 +615,7 @@ function DadLayout({
 
 function CondensedLayout({
   section, options, songKey,
-  onUpdateLine, onAddChord, onRemoveChord, onMoveChord,
+  onUpdateLine, onAddChord, onRemoveChord, onMoveChord, onAddLine, onDeleteLine,
 }: {
   section: Section;
   options: DisplayOptions;
@@ -574,6 +624,8 @@ function CondensedLayout({
   onAddChord?: (lineIdx: number, chord: string) => void;
   onRemoveChord?: (lineIdx: number, chordIdx: number) => void;
   onMoveChord?: (fromLine: number, chordIdx: number, toLine: number, pos: number) => void;
+  onAddLine?: () => void;
+  onDeleteLine?: (lineIdx: number) => void;
 }) {
   const sectionRef = useRef(section);
   sectionRef.current = section;
@@ -595,9 +647,27 @@ function CondensedLayout({
     <div className="font-mono text-sm space-y-2">
       <span ref={measureRef} aria-hidden className="absolute opacity-0 pointer-events-none font-mono text-sm">X</span>
       {section.lines.map((line, li) => {
+        const isEmpty = !line.lyrics && line.chords.length === 0;
+        const hasPreview = dragState?.targetLine === li;
+        if (isEmpty && !hasPreview) {
+          lineRefs.current[li] = null;
+          return null;
+        }
+
         const handleUpdate = onUpdateLine ? (updated: Line) => onUpdateLine(li, updated) : undefined;
         return (
-          <div key={li} ref={el => { lineRefs.current[li] = el; }}>
+          <div key={li} ref={el => { lineRefs.current[li] = el; }} className="group/line relative pr-7">
+            {/* Delete line button */}
+            {onDeleteLine && (
+              <button
+                onClick={() => onDeleteLine(li)}
+                className="absolute right-0 top-0 text-stone-300 hover:text-red-500 transition-colors opacity-0 group-hover/line:opacity-100 text-base leading-none"
+                title="Delete line"
+              >
+                ×
+              </button>
+            )}
+
             <ChordOverLyrics
               line={line}
               lineIdx={li}
@@ -619,6 +689,16 @@ function CondensedLayout({
           </div>
         );
       })}
+
+      {/* Add line button */}
+      {onAddLine && (
+        <button
+          onClick={onAddLine}
+          className="text-xs text-stone-400 hover:text-amber-600 transition-colors mt-1"
+        >
+          + add line
+        </button>
+      )}
     </div>
   );
 }
