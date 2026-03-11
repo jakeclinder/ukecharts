@@ -1,5 +1,3 @@
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import { saveAs } from 'file-saver';
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel,
@@ -7,53 +5,13 @@ import {
 import type { Song, DisplayOptions } from '../types';
 import { transposeSong } from './transpose';
 import { convertChordNotation } from './transpose';
-import { chordToAscii } from './chordData';
 
 // ─── PDF ──────────────────────────────────────────────────────────────────────
+// Uses the browser's native print dialog (choose "Save as PDF").
+// This captures the exact visual output including SVG chord diagrams.
 
-export async function exportToPdf(element: HTMLElement, song: Song): Promise<void> {
-  const canvas = await html2canvas(element, {
-    scale: 2,
-    useCORS: true,
-    backgroundColor: '#ffffff',
-  });
-
-  const pdf = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-  });
-
-  const pdfW = pdf.internal.pageSize.getWidth();
-  const pdfH = pdf.internal.pageSize.getHeight();
-  const margin = 10;
-  const contentW = pdfW - margin * 2;
-
-  const imgW = canvas.width;
-  const imgH = canvas.height;
-  const ratio = imgH / imgW;
-  const contentH = contentW * ratio;
-
-  let yOffset = 0;
-  while (yOffset < contentH) {
-    if (yOffset > 0) pdf.addPage();
-    const sourceY = (yOffset / contentH) * imgH;
-    const sourceH = Math.min((pdfH / contentH) * imgH, imgH - sourceY);
-
-    // Crop canvas for this page
-    const pageCanvas = document.createElement('canvas');
-    pageCanvas.width = imgW;
-    pageCanvas.height = sourceH;
-    const ctx = pageCanvas.getContext('2d')!;
-    ctx.drawImage(canvas, 0, -sourceY);
-
-    const pageData = pageCanvas.toDataURL('image/png');
-    const pageRenderH = Math.min(pdfH - margin * 2, contentH - yOffset);
-    pdf.addImage(pageData, 'PNG', margin, margin, contentW, pageRenderH);
-    yOffset += pdfH - margin * 2;
-  }
-
-  pdf.save(`${song.title || 'chart'}.pdf`);
+export function exportToPdf(): void {
+  window.print();
 }
 
 // ─── TXT ──────────────────────────────────────────────────────────────────────
@@ -86,7 +44,7 @@ export function exportToTxt(song: Song, options: DisplayOptions): void {
 
     section.lines.forEach(line => {
       if (line.chords.length > 0) {
-        // Build chord line
+        // Build chord line aligned by character position
         let chordLine = '';
         const sorted = [...line.chords].sort((a, b) => a.position - b.position);
         sorted.forEach(cp => {
@@ -96,13 +54,6 @@ export function exportToTxt(song: Song, options: DisplayOptions): void {
           chordLine += label + ' ';
         });
         lines.push(chordLine.trimEnd());
-      }
-
-      if (options.diagramStyle !== 'none') {
-        line.chords.forEach(cp => {
-          const ascii = chordToAscii(cp.chord, options.instrument);
-          lines.push(ascii);
-        });
       }
 
       if (line.lyrics) lines.push(line.lyrics);

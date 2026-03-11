@@ -236,6 +236,7 @@ function SectionBlock({
         </h2>
         {onUpdateSection && !isReference && !editingLyrics && (
           <button
+            data-no-print
             onClick={() => setEditingLyrics(true)}
             className="text-xs text-stone-400 hover:text-stone-600 transition-colors"
           >
@@ -495,6 +496,7 @@ function DadLayout({
             {/* Delete line button */}
             {onDeleteLine && (
               <button
+                data-no-print
                 onClick={() => onDeleteLine(li)}
                 className="absolute right-0 top-1 text-stone-300 hover:text-red-500 transition-colors opacity-0 group-hover/line:opacity-100 text-base leading-none"
                 title="Delete line"
@@ -547,6 +549,7 @@ function DadLayout({
       {/* Add line button */}
       {onAddLine && (
         <button
+          data-no-print
           onClick={onAddLine}
           className="text-xs text-stone-400 hover:text-amber-600 transition-colors mt-1"
         >
@@ -578,7 +581,7 @@ function DiagramRow({
   const [adding, setAdding] = useState(false);
   const [addInput, setAddInput] = useState('');
 
-  const rowHeight = options.diagramStyle === 'ascii' ? '8.5rem' : '5.5rem';
+  const rowHeight = options.diagramStyle === 'ascii' ? '12rem' : '5.5rem';
 
   // Build display list: hide the chord being dragged away from this line,
   // and show the drag preview when the cursor is over this line.
@@ -641,7 +644,7 @@ function DiagramRow({
 
       {/* Add-chord control */}
       {onAddChord && (
-        <div className="ml-3 flex items-start" style={{ paddingTop: '0.25rem' }}>
+        <div data-no-print className="ml-3 flex items-start" style={{ paddingTop: '0.25rem' }}>
           {adding ? (
             <div className="flex items-center gap-1">
               <input

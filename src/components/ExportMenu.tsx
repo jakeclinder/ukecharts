@@ -9,7 +9,7 @@ interface Props {
   printRef: React.RefObject<HTMLDivElement>;
 }
 
-export function ExportMenu({ song, options, printRef }: Props) {
+export function ExportMenu({ song, options }: Props) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
 
@@ -18,8 +18,9 @@ export function ExportMenu({ song, options, printRef }: Props) {
     setOpen(false);
     try {
       if (type === 'pdf') {
-        if (!printRef.current) return;
-        await exportToPdf(printRef.current, song);
+        exportToPdf();
+        setLoading(null);
+        return;
       } else if (type === 'txt') {
         exportToTxt(song, options);
       } else {

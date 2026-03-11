@@ -178,7 +178,7 @@ function App() {
           {activeSong ? (
             <div className="flex gap-6 p-6 max-w-6xl mx-auto">
               {/* Chart */}
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0" data-chart-column>
                 <ChartDisplay
                   song={activeSong}
                   options={options}
@@ -188,7 +188,7 @@ function App() {
               </div>
 
               {/* Options panel */}
-              <div className="w-60 flex-shrink-0">
+              <div className="w-60 flex-shrink-0" data-no-print>
                 <OptionsPanel
                   options={options}
                   onChange={setOptions}
