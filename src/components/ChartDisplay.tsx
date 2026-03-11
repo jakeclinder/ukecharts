@@ -16,25 +16,9 @@ export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
     [song, options.transposeSteps]
   );
 
-  const allChords = useMemo(() => {
-    const seen = new Set<string>();
-    const result: string[] = [];
-    transposed.sections.forEach(s => {
-      s.lines.forEach(l => {
-        l.chords.forEach(cp => {
-          const displayed = convertChordNotation(cp.chord, options.notation, transposed.key);
-          if (!seen.has(displayed)) {
-            seen.add(displayed);
-            result.push(cp.chord);
-          }
-        });
-      });
-    });
-    return result;
-  }, [transposed, options.notation]);
 
   const sections = useMemo(() => {
-    if (options.layoutMode === 'condensed' && options.chorusMode === 'reference') {
+    if (options.chorusMode === 'reference') {
       let chorusShown = false;
       return transposed.sections.map(s => {
         if (s.type === 'chorus') {
@@ -180,31 +164,6 @@ export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
         </div>
       </div>
 
-      {/* Condensed mode: chord grid at top */}
-      {options.layoutMode === 'condensed' && options.diagramStyle !== 'none' && (
-        <div className="mb-6">
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-stone-400 mb-3">Chords Used</h2>
-          <div className="flex flex-wrap gap-4">
-            {allChords.map(chord => (
-              <div key={chord} className="flex flex-col items-center">
-                <ChordDiagram
-                  chord={chord}
-                  instrument={options.instrument}
-                  style={options.diagramStyle}
-                  size="sm"
-                />
-                {options.diagramStyle !== 'visual' && (
-                  <span className="text-xs mt-1 font-medium text-stone-600">
-                    {convertChordNotation(chord, options.notation, transposed.key)}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-          <div className="border-t border-stone-200 mt-6" />
-        </div>
-      )}
-
       {/* Sections */}
       <div className="space-y-8">
         {sections.map(({ section, isReference }, idx) => (
@@ -296,20 +255,8 @@ function SectionBlock({
           }}
           onCancel={() => setEditingLyrics(false)}
         />
-      ) : options.layoutMode === 'dad' ? (
-        <DadLayout
-          section={section}
-          options={options}
-          songKey={songKey}
-          onUpdateLine={updateLine}
-          onAddChord={addChord}
-          onRemoveChord={removeChord}
-          onMoveChord={moveChord}
-          onAddLine={addLine}
-          onDeleteLine={deleteLine}
-        />
       ) : (
-        <CondensedLayout
+        <DadLayout
           section={section}
           options={options}
           songKey={songKey}
@@ -562,7 +509,6 @@ function DadLayout({
                 line={line}
                 lineIdx={li}
                 options={options}
-                songKey={songKey}
                 dragState={dragState}
                 canEdit={canEdit}
                 onChordMouseDown={canEdit ? handleChordMouseDown : undefined}
@@ -611,111 +557,18 @@ function DadLayout({
   );
 }
 
-// ─── Condensed Layout ─────────────────────────────────────────────────────────
-
-function CondensedLayout({
-  section, options, songKey,
-  onUpdateLine, onAddChord, onRemoveChord, onMoveChord, onAddLine, onDeleteLine,
-}: {
-  section: Section;
-  options: DisplayOptions;
-  songKey: string;
-  onUpdateLine?: (lineIdx: number, updatedLine: Line) => void;
-  onAddChord?: (lineIdx: number, chord: string) => void;
-  onRemoveChord?: (lineIdx: number, chordIdx: number) => void;
-  onMoveChord?: (fromLine: number, chordIdx: number, toLine: number, pos: number) => void;
-  onAddLine?: () => void;
-  onDeleteLine?: (lineIdx: number) => void;
-}) {
-  const sectionRef = useRef(section);
-  sectionRef.current = section;
-  const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const measureRef = useRef<HTMLSpanElement>(null);
-  const charWidthRef = useRef<number>(8.4);
-
-  useEffect(() => {
-    if (measureRef.current) charWidthRef.current = measureRef.current.getBoundingClientRect().width;
-  });
-
-  const { dragState, handleChordMouseDown } = useLayoutDrag(
-    sectionRef, lineRefs, charWidthRef, onUpdateLine, onMoveChord
-  );
-
-  const canEdit = !!(onUpdateLine || onAddChord || onRemoveChord || onMoveChord);
-
-  return (
-    <div className="font-mono text-sm space-y-2">
-      <span ref={measureRef} aria-hidden className="absolute opacity-0 pointer-events-none font-mono text-sm">X</span>
-      {section.lines.map((line, li) => {
-        const isEmpty = !line.lyrics && line.chords.length === 0;
-        const hasPreview = dragState?.targetLine === li;
-        if (isEmpty && !hasPreview) {
-          lineRefs.current[li] = null;
-          return null;
-        }
-
-        const handleUpdate = onUpdateLine ? (updated: Line) => onUpdateLine(li, updated) : undefined;
-        return (
-          <div key={li} ref={el => { lineRefs.current[li] = el; }} className="group/line relative pr-7">
-            {/* Delete line button */}
-            {onDeleteLine && (
-              <button
-                onClick={() => onDeleteLine(li)}
-                className="absolute right-0 top-0 text-stone-300 hover:text-red-500 transition-colors opacity-0 group-hover/line:opacity-100 text-base leading-none"
-                title="Delete line"
-              >
-                ×
-              </button>
-            )}
-
-            <ChordOverLyrics
-              line={line}
-              lineIdx={li}
-              options={options}
-              songKey={songKey}
-              dragState={dragState}
-              canEdit={canEdit}
-              onChordMouseDown={canEdit ? handleChordMouseDown : undefined}
-              onRemoveChord={onRemoveChord ? (ci) => onRemoveChord(li, ci) : undefined}
-              onAddChord={onAddChord ? (chord) => onAddChord(li, chord) : undefined}
-            />
-            {line.lyrics && (
-              <EditableLyrics
-                text={line.lyrics}
-                onSave={handleUpdate ? (t) => handleUpdate({ ...line, lyrics: t }) : undefined}
-                className="text-stone-800"
-              />
-            )}
-          </div>
-        );
-      })}
-
-      {/* Add line button */}
-      {onAddLine && (
-        <button
-          onClick={onAddLine}
-          className="text-xs text-stone-400 hover:text-amber-600 transition-colors mt-1"
-        >
-          + add line
-        </button>
-      )}
-    </div>
-  );
-}
-
 // ─── Diagram Row ──────────────────────────────────────────────────────────────
 // Chord diagrams absolutely positioned at cp.position ch units.
 // Drag is managed by the parent layout via onChordMouseDown.
 
 function DiagramRow({
-  line, lineIdx, options, songKey,
+  line, lineIdx, options,
   dragState, canEdit,
   onChordMouseDown, onRemoveChord, onAddChord,
 }: {
   line: Line;
   lineIdx: number;
   options: DisplayOptions;
-  songKey: string;
   dragState: DragState;
   canEdit: boolean;
   onChordMouseDown?: (lineIdx: number, chordIdx: number, e: React.MouseEvent) => void;
@@ -782,11 +635,6 @@ function DiagramRow({
               style={options.diagramStyle}
               size="sm"
             />
-            {options.diagramStyle === 'visual' && (
-              <span className="text-xs font-medium text-stone-500 mt-0.5 select-none">
-                {convertChordNotation(cp.chord, options.notation, songKey)}
-              </span>
-            )}
           </div>
         ))}
       </div>

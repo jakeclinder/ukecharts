@@ -1,6 +1,5 @@
 export type NotationSystem = 'letters' | 'nashville';
 export type DiagramStyle = 'visual' | 'ascii' | 'none';
-export type LayoutMode = 'dad' | 'condensed';
 export type ChorusMode = 'full' | 'reference';
 export type Instrument = 'ukulele' | 'guitar';
 
@@ -37,7 +36,6 @@ export interface Song {
 export interface DisplayOptions {
   notation: NotationSystem;
   diagramStyle: DiagramStyle;
-  layoutMode: LayoutMode;
   chorusMode: ChorusMode;
   instrument: Instrument;
   transposeSteps: number;
@@ -47,7 +45,6 @@ export interface DisplayOptions {
 export const DEFAULT_DISPLAY_OPTIONS: DisplayOptions = {
   notation: 'letters',
   diagramStyle: 'visual',
-  layoutMode: 'dad',
   chorusMode: 'full',
   instrument: 'ukulele',
   transposeSteps: 0,

@@ -59,6 +59,11 @@ function App() {
     setActiveSong(updated);
   }, [activeSong]);
 
+  const handleUpdateKey = useCallback((key: string) => {
+    if (!activeSong) return;
+    handleUpdateSong({ ...activeSong, key });
+  }, [activeSong, handleUpdateSong]);
+
   const handleUndo = useCallback(() => {
     if (past.length === 0 || !activeSong) return;
     const prev = past[past.length - 1];
@@ -188,7 +193,9 @@ function App() {
                   options={options}
                   onChange={setOptions}
                   songKey={displayedKey}
+                  originalKey={activeSong.key}
                   onTranspose={handleTranspose}
+                  onUpdateKey={handleUpdateKey}
                 />
               </div>
             </div>

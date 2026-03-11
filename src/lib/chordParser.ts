@@ -116,15 +116,8 @@ export function parseChartText(text: string, title = 'Untitled', artist = ''): S
       continue;
     }
 
-    // Empty line — flush pending chord if any, then signal section break
-    if (!trimmed.trim()) {
-      if (pendingChordLine !== null) {
-        currentLines.push({ lyrics: '', chords: parseChordsFromLine(pendingChordLine) });
-        pendingChordLine = null;
-      }
-      // Don't auto-flush section on blank lines (common in charts)
-      continue;
-    }
+    // Empty line — let any pending chord line carry over to the next lyric line.
+    if (!trimmed.trim()) continue;
 
     if (isChordLine(trimmed)) {
       // If we already have a pending chord line (two consecutive chord lines), flush the first
@@ -165,13 +158,69 @@ export function parseChartText(text: string, title = 'Untitled', artist = ''): S
   };
 }
 
+// Semitone index for root notes
+const ROOT_INDEX: Record<string, number> = {
+  'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3,
+  'E': 4, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8,
+  'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11,
+};
+const MAJOR_INTERVALS = [0, 2, 4, 5, 7, 9, 11];
+const MINOR_INTERVALS = [0, 2, 3, 5, 7, 8, 10];
+// Prefer flat spellings for these roots
+const FLAT_ROOTS: Record<number, string> = { 1: 'Db', 3: 'Eb', 6: 'Gb', 8: 'Ab', 10: 'Bb' };
+const SHARP_ROOTS: Record<number, string> = { 1: 'C#', 3: 'D#', 6: 'F#', 8: 'G#', 10: 'A#' };
+const NATURAL_ROOTS: Record<number, string> = { 0: 'C', 2: 'D', 4: 'E', 5: 'F', 7: 'G', 9: 'A', 11: 'B' };
+
 function detectKey(sections: Section[]): string {
+  // Collect all chords and the first chord
+  const allChords: { root: string; isMinor: boolean }[] = [];
+  let firstChord: { root: string; isMinor: boolean } | null = null;
+
   for (const section of sections) {
     for (const line of section.lines) {
-      if (line.chords.length > 0) {
-        return line.chords[0].chord;
+      for (const cp of line.chords) {
+        const m = cp.chord.match(/^([A-G][b#]?)(m(?!aj)|min)?/);
+        if (!m) continue;
+        const entry = { root: m[1], isMinor: !!m[2] };
+        allChords.push(entry);
+        if (!firstChord) firstChord = entry;
       }
     }
   }
-  return 'C';
+
+  if (allChords.length === 0) return 'C';
+
+  // Score each of 24 possible keys (12 major + 12 minor)
+  let bestScore = -1;
+  let bestKey = firstChord ? firstChord.root + (firstChord.isMinor ? 'm' : '') : 'C';
+
+  for (let tonic = 0; tonic < 12; tonic++) {
+    for (const [intervals, isMinorKey] of [[MAJOR_INTERVALS, false], [MINOR_INTERVALS, true]] as [number[], boolean][]) {
+      const scale = new Set(intervals.map(i => (tonic + i) % 12));
+      let score = 0;
+      for (const ch of allChords) {
+        const rootIdx = ROOT_INDEX[ch.root];
+        if (rootIdx === undefined) continue;
+        if (scale.has(rootIdx)) score += 2;
+        // Bonus: tonic chord matches key quality
+        if (rootIdx === tonic && ch.isMinor === isMinorKey) score += 3;
+      }
+      // Bonus: first chord is the tonic
+      if (firstChord) {
+        const firstIdx = ROOT_INDEX[firstChord.root];
+        if (firstIdx === tonic && firstChord.isMinor === isMinorKey) score += 5;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        // Prefer flat or sharp spelling based on key conventions
+        const useFlatKeys = new Set([5, 10, 3, 8, 1, 6]); // F Bb Eb Ab Db Gb
+        const rootName = NATURAL_ROOTS[tonic] ??
+          (useFlatKeys.has(tonic) ? FLAT_ROOTS[tonic] : SHARP_ROOTS[tonic]) ?? 'C';
+        bestKey = rootName + (isMinorKey ? 'm' : '');
+      }
+    }
+  }
+
+  return bestKey;
 }

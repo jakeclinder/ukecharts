@@ -70,18 +70,6 @@ export function exportToTxt(song: Song, options: DisplayOptions): void {
   }
   lines.push('');
 
-  // Unique chords for condensed header
-  if (options.layoutMode === 'condensed') {
-    const seen = new Set<string>();
-    const chords: string[] = [];
-    transposed.sections.forEach(s => s.lines.forEach(l => l.chords.forEach(cp => {
-      if (!seen.has(cp.chord)) { seen.add(cp.chord); chords.push(cp.chord); }
-    })));
-    if (chords.length > 0) {
-      lines.push('Chords: ' + chords.map(c => convertChordNotation(c, options.notation, transposed.key)).join('  '));
-      lines.push('');
-    }
-  }
 
   let chorusShown = false;
   transposed.sections.forEach(section => {
@@ -110,7 +98,7 @@ export function exportToTxt(song: Song, options: DisplayOptions): void {
         lines.push(chordLine.trimEnd());
       }
 
-      if (options.diagramStyle !== 'none' && options.layoutMode === 'dad') {
+      if (options.diagramStyle !== 'none') {
         line.chords.forEach(cp => {
           const ascii = chordToAscii(cp.chord, options.instrument);
           lines.push(ascii);

@@ -1,11 +1,14 @@
-import type { DisplayOptions, NotationSystem, DiagramStyle, LayoutMode, ChorusMode, Instrument } from '../types';
+import { useState } from 'react';
+import type { DisplayOptions, NotationSystem, DiagramStyle, ChorusMode, Instrument } from '../types';
 import { ChevronDown, ChevronUp, Music, AlignLeft, Image, Repeat2 } from 'lucide-react';
 
 interface Props {
   options: DisplayOptions;
   onChange: (options: DisplayOptions) => void;
   songKey: string;
+  originalKey: string;
   onTranspose: (steps: number) => void;
+  onUpdateKey: (key: string) => void;
 }
 
 function set<K extends keyof DisplayOptions>(opts: DisplayOptions, key: K, val: DisplayOptions[K]): DisplayOptions {
@@ -51,7 +54,9 @@ function ToggleGroup<T extends string>({
   );
 }
 
-export function OptionsPanel({ options, onChange, songKey, onTranspose }: Props) {
+export function OptionsPanel({ options, onChange, songKey, originalKey, onTranspose, onUpdateKey }: Props) {
+  const [editingKey, setEditingKey] = useState(false);
+  const [keyInput, setKeyInput] = useState('');
   return (
     <div className="bg-white border border-stone-200 rounded-xl p-5 text-sm shadow-sm sticky top-4">
       <h2 className="font-semibold text-stone-800 mb-5 text-base">Display Options</h2>
@@ -93,19 +98,6 @@ export function OptionsPanel({ options, onChange, songKey, onTranspose }: Props)
         />
       </OptionGroup>
 
-      {/* Layout */}
-      <OptionGroup label="Layout" icon={<AlignLeft size={12} />}>
-        <ToggleGroup<LayoutMode>
-          options={['dad', 'condensed']}
-          value={options.layoutMode}
-          onChange={v => onChange(set(options, 'layoutMode', v))}
-          labels={{
-            dad: 'Full (diagrams over lyrics)',
-            condensed: 'Condensed (chords at top)',
-          }}
-        />
-      </OptionGroup>
-
       {/* Chorus mode */}
       <OptionGroup label="Chorus Display" icon={<Repeat2 size={12} />}>
         <ToggleGroup<ChorusMode>
@@ -121,6 +113,37 @@ export function OptionsPanel({ options, onChange, songKey, onTranspose }: Props)
 
       {/* Transpose */}
       <OptionGroup label="Transpose" icon={<ChevronUp size={12} />}>
+        {/* Original key — editable */}
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs text-stone-400">Original key</span>
+          {editingKey ? (
+            <input
+              autoFocus
+              value={keyInput}
+              onChange={e => setKeyInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  const k = keyInput.trim();
+                  if (k) { onUpdateKey(k); onTranspose(0); }
+                  setEditingKey(false);
+                }
+                if (e.key === 'Escape') setEditingKey(false);
+              }}
+              onBlur={() => setEditingKey(false)}
+              placeholder="e.g. C, Am"
+              className="w-20 text-xs border border-amber-300 rounded px-1.5 py-0.5 outline-none bg-amber-50 font-mono text-right"
+            />
+          ) : (
+            <button
+              onClick={() => { setKeyInput(originalKey); setEditingKey(true); }}
+              className="text-xs font-semibold text-stone-700 hover:text-amber-700 transition-colors"
+              title="Click to change original key"
+            >
+              {originalKey}
+            </button>
+          )}
+        </div>
+
         <div className="flex items-center gap-2">
           <button
             onClick={() => onTranspose(options.transposeSteps - 1)}
@@ -132,7 +155,7 @@ export function OptionsPanel({ options, onChange, songKey, onTranspose }: Props)
             <div className="font-semibold text-stone-800">{songKey}</div>
             <div className="text-xs text-stone-400">
               {options.transposeSteps === 0
-                ? 'Original key'
+                ? 'current key'
                 : `${options.transposeSteps > 0 ? '+' : ''}${options.transposeSteps} semitones`}
             </div>
           </div>
