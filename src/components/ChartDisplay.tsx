@@ -492,56 +492,59 @@ function DadLayout({
         const handleUpdate = onUpdateLine ? (updated: Line) => onUpdateLine(li, updated) : undefined;
 
         return (
-          <div key={li} ref={el => { lineRefs.current[li] = el; }} className="group/line relative pr-7">
-            {/* Delete line button */}
+          <div key={li} ref={el => { lineRefs.current[li] = el; }} className="group/line relative">
+            {/* Delete line button — marked peer so siblings can react to its hover */}
             {onDeleteLine && (
               <button
                 data-no-print
                 onClick={() => onDeleteLine(li)}
-                className="absolute right-0 top-1 text-stone-300 hover:text-red-500 transition-colors opacity-0 group-hover/line:opacity-100 text-base leading-none"
+                className="peer absolute right-1 top-1 z-10 text-stone-300 hover:text-red-500 transition-colors opacity-0 group-hover/line:opacity-100 text-base leading-none"
                 title="Delete line"
               >
                 ×
               </button>
             )}
 
-            {/* Diagram row */}
-            {options.diagramStyle !== 'none' && (
-              <DiagramRow
-                line={line}
-                lineIdx={li}
-                options={options}
-                dragState={dragState}
-                canEdit={canEdit}
-                onChordMouseDown={canEdit ? handleChordMouseDown : undefined}
-                onRemoveChord={onRemoveChord ? (ci) => onRemoveChord(li, ci) : undefined}
-                onAddChord={onAddChord ? (chord) => onAddChord(li, chord) : undefined}
-              />
-            )}
+            {/* Content wrapper — highlights on delete-button hover */}
+            <div className="pr-7 rounded-lg transition-colors peer-hover:bg-red-50 peer-hover:ring-1 peer-hover:ring-red-200">
+              {/* Diagram row */}
+              {options.diagramStyle !== 'none' && (
+                <DiagramRow
+                  line={line}
+                  lineIdx={li}
+                  options={options}
+                  dragState={dragState}
+                  canEdit={canEdit}
+                  onChordMouseDown={canEdit ? handleChordMouseDown : undefined}
+                  onRemoveChord={onRemoveChord ? (ci) => onRemoveChord(li, ci) : undefined}
+                  onAddChord={onAddChord ? (chord) => onAddChord(li, chord) : undefined}
+                />
+              )}
 
-            {/* Chord-name-only row (diagram style: none) */}
-            {options.diagramStyle === 'none' && (
-              <ChordOverLyrics
-                line={line}
-                lineIdx={li}
-                options={options}
-                songKey={songKey}
-                dragState={dragState}
-                canEdit={canEdit}
-                onChordMouseDown={canEdit ? handleChordMouseDown : undefined}
-                onRemoveChord={onRemoveChord ? (ci) => onRemoveChord(li, ci) : undefined}
-                onAddChord={onAddChord ? (chord) => onAddChord(li, chord) : undefined}
-              />
-            )}
+              {/* Chord-name-only row (diagram style: none) */}
+              {options.diagramStyle === 'none' && (
+                <ChordOverLyrics
+                  line={line}
+                  lineIdx={li}
+                  options={options}
+                  songKey={songKey}
+                  dragState={dragState}
+                  canEdit={canEdit}
+                  onChordMouseDown={canEdit ? handleChordMouseDown : undefined}
+                  onRemoveChord={onRemoveChord ? (ci) => onRemoveChord(li, ci) : undefined}
+                  onAddChord={onAddChord ? (chord) => onAddChord(li, chord) : undefined}
+                />
+              )}
 
-            {/* Lyrics */}
-            {line.lyrics && (
-              <EditableLyrics
-                text={line.lyrics}
-                onSave={handleUpdate ? (t) => handleUpdate({ ...line, lyrics: t }) : undefined}
-                className="text-stone-800 leading-relaxed"
-              />
-            )}
+              {/* Lyrics */}
+              {line.lyrics && (
+                <EditableLyrics
+                  text={line.lyrics}
+                  onSave={handleUpdate ? (t) => handleUpdate({ ...line, lyrics: t }) : undefined}
+                  className="text-stone-800 leading-relaxed"
+                />
+              )}
+            </div>
           </div>
         );
       })}
