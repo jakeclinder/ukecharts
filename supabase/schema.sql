@@ -28,6 +28,8 @@ create table if not exists songs (
   tempo int,
   sections jsonb not null default '[]',
   folder_id uuid references folders(id) on delete set null,
+  parent_id uuid references songs(id) on delete set null,
+  version_name text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

@@ -19,6 +19,8 @@ function dbRowToSong(row: Record<string, unknown>): Song {
     tempo: row.tempo as number | undefined,
     sections: (row.sections as Song['sections']) ?? [],
     folderId: row.folder_id as string | undefined,
+    parentId: row.parent_id as string | undefined,
+    versionName: row.version_name as string | undefined,
     createdAt: new Date(row.created_at as string).getTime(),
     updatedAt: new Date(row.updated_at as string).getTime(),
   };
@@ -36,6 +38,8 @@ function songToDbRow(song: Song, userId: string): Record<string, unknown> {
     tempo: song.tempo ?? null,
     sections: song.sections,
     folder_id: song.folderId ?? null,
+    parent_id: song.parentId ?? null,
+    version_name: song.versionName ?? null,
     updated_at: new Date(song.updatedAt).toISOString(),
     created_at: new Date(song.createdAt).toISOString(),
   };
