@@ -29,8 +29,24 @@ export interface Song {
   timeSignature?: string;
   tempo?: number;
   sections: Section[];
+  folderId?: string;
   createdAt: number;
   updatedAt: number;
+  parentId?: string;     // links a version to its original song
+  versionName?: string;  // e.g. "Capo 2", "Key of G", "Simple version"
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  createdAt: number;
+}
+
+export interface SongSet {
+  id: string;
+  name: string;
+  songIds: string[];
+  createdAt: number;
 }
 
 export interface DisplayOptions {

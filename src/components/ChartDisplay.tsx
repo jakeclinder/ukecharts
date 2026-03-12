@@ -16,6 +16,11 @@ export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
     [song, options.transposeSteps]
   );
 
+  // Pending chorus propagation: after editing a chorus, prompt to sync all others
+  const [pendingPropagation, setPendingPropagation] = useState<{
+    otherChorusIndices: number[];
+    newLines: Line[];
+  } | null>(null);
 
   const sections = useMemo(() => {
     if (options.chorusMode === 'reference') {
@@ -69,7 +74,36 @@ export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
       chords: originalSection.lines[i]?.chords ?? [],
     }));
     updateSong(sectionIdx, () => merged);
-  }, [song, updateSong]);
+
+    // If this is a chorus and there are other choruses, offer to propagate
+    if (originalSection.type === 'chorus' && onUpdateSong) {
+      const otherChorusIndices = song.sections
+        .map((s, i) => ({ s, i }))
+        .filter(({ s, i }) => s.type === 'chorus' && i !== sectionIdx)
+        .map(({ i }) => i);
+      if (otherChorusIndices.length > 0) {
+        setPendingPropagation({ otherChorusIndices, newLines: merged });
+      }
+    }
+  }, [song, updateSong, onUpdateSong]);
+
+  const handlePropagate = useCallback(() => {
+    if (!pendingPropagation || !onUpdateSong) return;
+    const { otherChorusIndices, newLines } = pendingPropagation;
+    onUpdateSong({
+      ...song,
+      updatedAt: Date.now(),
+      sections: song.sections.map((s, si) => {
+        if (!otherChorusIndices.includes(si)) return s;
+        const propagated = newLines.map((line, i) => ({
+          lyrics: line.lyrics,
+          chords: s.lines[i]?.chords ?? [],
+        }));
+        return { ...s, lines: propagated };
+      }),
+    });
+    setPendingPropagation(null);
+  }, [pendingPropagation, song, onUpdateSong]);
 
   // Add a chord typed in the current (possibly transposed) key → store in original key.
   const handleAddChord = useCallback((sectionIdx: number, lineIdx: number, chord: string) => {
@@ -143,6 +177,23 @@ export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
     updateSong(sectionIdx, lines => lines.filter((_, i) => i !== lineIdx));
   }, [updateSong]);
 
+  const handleDuplicateSection = useCallback((sectionIdx: number) => {
+    if (!onUpdateSong) return;
+    const src = song.sections[sectionIdx];
+    if (!src) return;
+    const duplicate: Section = {
+      ...src,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      lines: src.lines.map(l => ({ ...l, chords: l.chords.map(c => ({ ...c })) })),
+    };
+    const newSections = [
+      ...song.sections.slice(0, sectionIdx + 1),
+      duplicate,
+      ...song.sections.slice(sectionIdx + 1),
+    ];
+    onUpdateSong({ ...song, updatedAt: Date.now(), sections: newSections });
+  }, [song, onUpdateSong]);
+
   return (
     <div ref={printRef} className="font-sans">
       {/* Song header */}
@@ -181,9 +232,32 @@ export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
             onMoveChord={onUpdateSong ? handleMoveChord : undefined}
             onAddLine={onUpdateSong ? handleAddLine : undefined}
             onDeleteLine={onUpdateSong ? handleDeleteLine : undefined}
+            onDuplicateSection={onUpdateSong ? handleDuplicateSection : undefined}
           />
         ))}
       </div>
+
+      {/* Chorus propagation toast */}
+      {pendingPropagation && (
+        <div
+          data-no-print
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-stone-800 text-white rounded-2xl px-5 py-3 shadow-2xl flex items-center gap-4 text-sm"
+        >
+          <span>Apply these lyrics to all other choruses?</span>
+          <button
+            onClick={handlePropagate}
+            className="text-amber-400 font-semibold hover:text-amber-300 transition-colors"
+          >
+            Yes, sync all
+          </button>
+          <button
+            onClick={() => setPendingPropagation(null)}
+            className="text-stone-400 hover:text-stone-200 transition-colors"
+          >
+            No
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -203,11 +277,13 @@ interface SectionBlockProps {
   onMoveChord?: (sectionIdx: number, fromLine: number, chordIdx: number, toLine: number, pos: number) => void;
   onAddLine?: (sectionIdx: number) => void;
   onDeleteLine?: (sectionIdx: number, lineIdx: number) => void;
+  onDuplicateSection?: (sectionIdx: number) => void;
 }
 
 function SectionBlock({
   section, sectionIdx, isReference, options, songKey,
   onUpdateLine, onUpdateSection, onAddChord, onRemoveChord, onMoveChord, onAddLine, onDeleteLine,
+  onDuplicateSection,
 }: SectionBlockProps) {
   const [editingLyrics, setEditingLyrics] = useState(false);
 
@@ -234,15 +310,25 @@ function SectionBlock({
         <h2 className="text-xs font-semibold uppercase tracking-widest text-stone-400">
           {section.label}
         </h2>
-        {onUpdateSection && !isReference && !editingLyrics && (
-          <button
-            data-no-print
-            onClick={() => setEditingLyrics(true)}
-            className="text-xs text-stone-400 hover:text-stone-600 transition-colors"
-          >
-            edit lyrics
-          </button>
-        )}
+        <div data-no-print className="flex items-center gap-2">
+          {onDuplicateSection && !editingLyrics && (
+            <button
+              onClick={() => onDuplicateSection(sectionIdx)}
+              className="text-xs text-stone-400 hover:text-stone-600 transition-colors"
+              title="Duplicate this section"
+            >
+              duplicate
+            </button>
+          )}
+          {onUpdateSection && !isReference && !editingLyrics && (
+            <button
+              onClick={() => setEditingLyrics(true)}
+              className="text-xs text-stone-400 hover:text-stone-600 transition-colors"
+            >
+              edit lyrics
+            </button>
+          )}
+        </div>
       </div>
 
       {isReference ? (

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus, Music2, PanelLeft, RotateCcw, RotateCw } from 'lucide-react';
+import { Plus, Music2, PanelLeft, RotateCcw, RotateCw, GitBranch } from 'lucide-react';
 import type { Song, DisplayOptions } from './types';
 import { DEFAULT_DISPLAY_OPTIONS } from './types';
 import { loadSongs, upsertSong, deleteSong, loadOptions, saveOptions } from './lib/storage';
@@ -26,6 +26,8 @@ function App() {
   const printRef = useRef<HTMLDivElement>(null!);
   const [past, setPast] = useState<Song[]>([]);
   const [future, setFuture] = useState<Song[]>([]);
+  const [showVersionModal, setShowVersionModal] = useState(false);
+  const [versionNameInput, setVersionNameInput] = useState('');
 
   // Persist options
   useEffect(() => {
@@ -81,6 +83,25 @@ function App() {
     setSongs(upsertSong(next));
     setActiveSong(next);
   }, [future, activeSong]);
+
+  const handleSaveVersion = useCallback(() => {
+    if (!activeSong || !versionNameInput.trim()) return;
+    // The root song to link to: if activeSong is already a version, link to its parent
+    const rootId = activeSong.parentId ?? activeSong.id;
+    const version: Song = {
+      ...activeSong,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      parentId: rootId,
+      versionName: versionNameInput.trim(),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    const updated = upsertSong(version);
+    setSongs(updated);
+    setActiveSong(version);
+    setShowVersionModal(false);
+    setVersionNameInput('');
+  }, [activeSong, versionNameInput]);
 
   // Keyboard shortcuts for undo/redo
   useEffect(() => {
@@ -140,6 +161,18 @@ function App() {
             </button>
           </div>
         )}
+
+        {activeSong && (
+          <button
+            onClick={() => { setVersionNameInput(''); setShowVersionModal(true); }}
+            className="flex items-center gap-2 px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-600 text-sm font-medium rounded-xl transition-colors"
+            title="Save current state as a named version"
+          >
+            <GitBranch size={14} />
+            Save version
+          </button>
+        )}
+
         {activeSong && (
           <ExportMenu song={activeSong} options={options} printRef={printRef} />
         )}
@@ -221,6 +254,46 @@ function App() {
       {/* Import modal */}
       {showImport && (
         <ImportModal onImport={handleImport} onClose={() => setShowImport(false)} />
+      )}
+
+      {/* Save Version modal */}
+      {showVersionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-80">
+            <h3 className="font-semibold text-stone-800 mb-1">Save as Version</h3>
+            <p className="text-sm text-stone-500 mb-4">
+              Give this version a name (e.g. "Capo 2", "Key of G", "Simple chords").
+              It will be saved as a copy linked to "{activeSong?.title}".
+            </p>
+            <input
+              autoFocus
+              type="text"
+              value={versionNameInput}
+              onChange={e => setVersionNameInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleSaveVersion();
+                if (e.key === 'Escape') setShowVersionModal(false);
+              }}
+              placeholder="Version name…"
+              className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-400 mb-4"
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowVersionModal(false)}
+                className="px-4 py-2 text-sm text-stone-500 hover:bg-stone-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveVersion}
+                disabled={!versionNameInput.trim()}
+                className="px-4 py-2 text-sm bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition-colors disabled:opacity-40"
+              >
+                Save version
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
