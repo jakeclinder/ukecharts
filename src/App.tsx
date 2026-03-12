@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus, Music2, PanelLeft, RotateCcw, RotateCw, GitBranch, LogIn, LogOut, Cloud, CloudOff, Loader2 } from 'lucide-react';
+import { Plus, Music2, PanelLeft, RotateCcw, RotateCw, GitBranch, LogIn, LogOut, Cloud, CloudOff, Loader2, HardDriveDownload } from 'lucide-react';
 import type { Song, DisplayOptions, Folder, SongSet } from './types';
 import { DEFAULT_DISPLAY_OPTIONS } from './types';
 import {
@@ -21,6 +21,12 @@ import {
   fetchFolders, upsertCloudFolder, deleteCloudFolder,
   fetchSets, upsertCloudSet, deleteCloudSet,
 } from './lib/cloudStorage';
+import {
+  dropboxEnabled, isDropboxConnected, startDropboxAuth,
+  handleDropboxCallback, clearDropboxAuth,
+  uploadToDropbox, downloadFromDropbox,
+} from './lib/dropbox';
+import type { DropboxBackup } from './lib/dropbox';
 
 const OPTIONS_KEY = 'global';
 
@@ -43,6 +49,8 @@ function App() {
   const [future, setFuture] = useState<Song[]>([]);
   const [showVersionModal, setShowVersionModal] = useState(false);
   const [versionNameInput, setVersionNameInput] = useState('');
+  const [dropboxConnected, setDropboxConnected] = useState(() => isDropboxConnected());
+  const [dropboxSyncing, setDropboxSyncing] = useState(false);
 
   // ── Persist options ──────────────────────────────────────────────────────
   useEffect(() => { saveOptions(OPTIONS_KEY, options); }, [options]);
@@ -72,6 +80,52 @@ function App() {
       saveSets(cloudSets);
     }).catch(console.error).finally(() => setSyncing(false));
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Dropbox: handle OAuth callback on page load ───────────────────────────
+  useEffect(() => {
+    if (!dropboxEnabled) return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    if (!code) return;
+
+    // Clean up URL immediately
+    window.history.replaceState({}, '', window.location.pathname);
+
+    handleDropboxCallback(code).then(async ok => {
+      if (!ok) return;
+      setDropboxConnected(true);
+      // On first connect, download and merge any existing backup
+      const backup = await downloadFromDropbox();
+      if (!backup) return;
+      const remote = (backup.songs ?? []) as Song[];
+      setSongs(prev => {
+        const byId: Record<string, Song> = {};
+        prev.forEach(s => { byId[s.id] = s; });
+        remote.forEach(s => { byId[s.id] = s; }); // remote wins
+        const merged = Object.values(byId).sort((a, b) => b.updatedAt - a.updatedAt);
+        merged.forEach(s => upsertSong(s));
+        return merged;
+      });
+    }).catch(console.error);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Dropbox: auto-sync whenever songs/folders/sets change ────────────────
+  useEffect(() => {
+    if (!dropboxConnected || !dropboxEnabled) return;
+    const timer = setTimeout(async () => {
+      setDropboxSyncing(true);
+      const backup: DropboxBackup = {
+        songs:   loadSongs(),
+        folders: loadFolders(),
+        sets:    loadSets(),
+        savedAt: new Date().toISOString(),
+        version: 1,
+      };
+      await uploadToDropbox(backup).catch(console.error);
+      setDropboxSyncing(false);
+    }, 2000); // debounce: wait 2s after last change
+    return () => clearTimeout(timer);
+  }, [songs, folders, sets, dropboxConnected]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   const handleImport = useCallback((song: Song) => {
@@ -313,6 +367,39 @@ function App() {
           <div className="flex items-center gap-1 text-xs text-stone-400" title="Saving locally only">
             <CloudOff size={13} />
           </div>
+        )}
+
+        {/* ── Dropbox ── */}
+        {dropboxEnabled && (
+          dropboxConnected ? (
+            <div className="flex items-center gap-1.5">
+              <div
+                className="flex items-center gap-1.5 text-xs text-stone-500 cursor-default"
+                title={dropboxSyncing ? 'Syncing to Dropbox…' : 'Backed up to Dropbox'}
+              >
+                {dropboxSyncing
+                  ? <Loader2 size={13} className="animate-spin text-blue-400" />
+                  : <HardDriveDownload size={13} className="text-blue-500" />}
+                <span className="hidden sm:inline">Dropbox</span>
+              </div>
+              <button
+                onClick={() => { clearDropboxAuth(); setDropboxConnected(false); }}
+                className="text-xs text-stone-400 hover:text-stone-600 px-1.5 py-1 rounded hover:bg-stone-100 transition-colors"
+                title="Disconnect Dropbox"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={startDropboxAuth}
+              className="flex items-center gap-2 px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-600 text-sm font-medium rounded-xl transition-colors"
+              title="Back up charts to Dropbox"
+            >
+              <HardDriveDownload size={14} />
+              <span className="hidden sm:inline">Connect Dropbox</span>
+            </button>
+          )
         )}
 
         <button onClick={() => setShowImport(true)}
