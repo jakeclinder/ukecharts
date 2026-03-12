@@ -2,6 +2,7 @@ import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import type { Song, Section, Line, ChordPosition, DisplayOptions } from '../types';
 import { transposeSong, convertChordNotation, transposeChord, preferFlats } from '../lib/transpose';
 import { ChordDiagram } from './ChordDiagram';
+import { GripVertical } from 'lucide-react';
 
 interface Props {
   song: Song;
@@ -21,6 +22,17 @@ export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
     otherChorusIndices: number[];
     newLines: Line[];
   } | null>(null);
+
+  // Section reorder panel: index of the section the user clicked to "pick up", or null
+  const [reorderPickedIdx, setReorderPickedIdx] = useState<number | null>(null);
+
+  const handleReorderSections = useCallback((fromIdx: number, toIdx: number) => {
+    if (!onUpdateSong || fromIdx === toIdx) return;
+    const newSections = [...song.sections];
+    const [moved] = newSections.splice(fromIdx, 1);
+    newSections.splice(toIdx, 0, moved);
+    onUpdateSong({ ...song, updatedAt: Date.now(), sections: newSections });
+  }, [song, onUpdateSong]);
 
   const sections = useMemo(() => {
     if (options.chorusMode === 'reference') {
@@ -233,9 +245,24 @@ export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
             onAddLine={onUpdateSong ? handleAddLine : undefined}
             onDeleteLine={onUpdateSong ? handleDeleteLine : undefined}
             onDuplicateSection={onUpdateSong ? handleDuplicateSection : undefined}
+            onGripClick={onUpdateSong ? (idx) => setReorderPickedIdx(idx) : undefined}
           />
         ))}
       </div>
+
+      {/* Section reorder panel */}
+      {reorderPickedIdx !== null && (
+        <SectionReorderPanel
+          sections={song.sections}
+          pickedIdx={reorderPickedIdx}
+          onMove={(from, to) => {
+            handleReorderSections(from, to);
+            setReorderPickedIdx(null);
+          }}
+          onPickChange={setReorderPickedIdx}
+          onClose={() => setReorderPickedIdx(null)}
+        />
+      )}
 
       {/* Chorus propagation toast */}
       {pendingPropagation && (
@@ -278,12 +305,13 @@ interface SectionBlockProps {
   onAddLine?: (sectionIdx: number) => void;
   onDeleteLine?: (sectionIdx: number, lineIdx: number) => void;
   onDuplicateSection?: (sectionIdx: number) => void;
+  onGripClick?: (sectionIdx: number) => void;
 }
 
 function SectionBlock({
   section, sectionIdx, isReference, options, songKey,
   onUpdateLine, onUpdateSection, onAddChord, onRemoveChord, onMoveChord, onAddLine, onDeleteLine,
-  onDuplicateSection,
+  onDuplicateSection, onGripClick,
 }: SectionBlockProps) {
   const [editingLyrics, setEditingLyrics] = useState(false);
 
@@ -307,9 +335,21 @@ function SectionBlock({
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-stone-400">
-          {section.label}
-        </h2>
+        <div className="flex items-center gap-1.5">
+          {onGripClick && (
+            <button
+              data-no-print
+              onMouseDown={e => { e.preventDefault(); onGripClick(sectionIdx); }}
+              className="cursor-grab p-0.5 rounded text-stone-200 hover:text-stone-500 transition-colors"
+              title="Reorder sections"
+            >
+              <GripVertical size={14} />
+            </button>
+          )}
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-stone-400">
+            {section.label}
+          </h2>
+        </div>
         <div data-no-print className="flex items-center gap-2">
           {onDuplicateSection && !editingLyrics && (
             <button
@@ -937,5 +977,142 @@ function EditableLyrics({
     >
       {text || '\u00A0'}
     </p>
+  );
+}
+
+// ─── Section Reorder Panel ────────────────────────────────────────────────────
+
+const TYPE_COLORS: Record<string, string> = {
+  verse:         'bg-blue-100 text-blue-700',
+  chorus:        'bg-amber-100 text-amber-700',
+  bridge:        'bg-purple-100 text-purple-700',
+  'pre-chorus':  'bg-orange-100 text-orange-700',
+  intro:         'bg-green-100 text-green-700',
+  outro:         'bg-rose-100 text-rose-700',
+  tag:           'bg-teal-100 text-teal-700',
+  instrumental:  'bg-cyan-100 text-cyan-700',
+  other:         'bg-stone-100 text-stone-600',
+};
+
+function SectionReorderPanel({
+  sections,
+  pickedIdx,
+  onMove,
+  onPickChange,
+  onClose,
+}: {
+  sections: Section[];
+  pickedIdx: number;
+  onMove: (fromIdx: number, toIdx: number) => void;
+  onPickChange: (idx: number) => void;
+  onClose: () => void;
+}) {
+  const [dragIdx, setDragIdx] = useState<number | null>(pickedIdx);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl p-5 w-80 max-h-[85vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4 flex-shrink-0">
+          <div>
+            <h3 className="font-semibold text-stone-800 text-sm">Reorder Sections</h3>
+            <p className="text-xs text-stone-400 mt-0.5">Drag to rearrange, or click a section to pick it up</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium transition-colors"
+          >
+            Done
+          </button>
+        </div>
+
+        {/* Section list */}
+        <div className="overflow-y-auto space-y-1.5">
+          {sections.map((section, idx) => {
+            const isPicked = dragIdx === idx;
+            const isOver = overIdx === idx && dragIdx !== null && dragIdx !== idx;
+            const lyricsPreview = section.lines
+              .map(l => l.lyrics)
+              .filter(Boolean)
+              .join(' · ')
+              .slice(0, 45);
+
+            return (
+              <div
+                key={section.id}
+                draggable
+                onDragStart={e => {
+                  e.dataTransfer.effectAllowed = 'move';
+                  setDragIdx(idx);
+                  onPickChange(idx);
+                }}
+                onDragOver={e => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  setOverIdx(idx);
+                }}
+                onDragLeave={() => setOverIdx(null)}
+                onDrop={e => {
+                  e.preventDefault();
+                  if (dragIdx !== null && dragIdx !== idx) onMove(dragIdx, idx);
+                  setDragIdx(null);
+                  setOverIdx(null);
+                }}
+                onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
+                onClick={() => {
+                  if (dragIdx === null) {
+                    setDragIdx(idx);
+                    onPickChange(idx);
+                  } else if (dragIdx !== idx) {
+                    onMove(dragIdx, idx);
+                  } else {
+                    setDragIdx(null);
+                  }
+                }}
+                className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition-all select-none ${
+                  dragIdx !== null && dragIdx !== idx
+                    ? 'cursor-copy'
+                    : 'cursor-grab active:cursor-grabbing'
+                } ${
+                  isPicked
+                    ? 'opacity-50 border-stone-300 bg-stone-50'
+                    : isOver
+                      ? 'border-amber-400 bg-amber-50 scale-[1.02]'
+                      : idx === pickedIdx && dragIdx === null
+                        ? 'border-amber-300 bg-amber-50/60'
+                        : 'border-transparent hover:border-stone-200 hover:bg-stone-50'
+                }`}
+              >
+                <GripVertical size={14} className="text-stone-300 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-stone-700 truncate">{section.label}</p>
+                  {lyricsPreview && (
+                    <p className="text-xs text-stone-400 truncate mt-0.5">
+                      {lyricsPreview}{lyricsPreview.length >= 45 ? '…' : ''}
+                    </p>
+                  )}
+                </div>
+                <span className={`text-xs px-1.5 py-0.5 rounded-md font-medium flex-shrink-0 ${TYPE_COLORS[section.type] ?? TYPE_COLORS.other}`}>
+                  {section.type}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {dragIdx !== null && (
+          <p className="text-xs text-stone-400 text-center mt-3 flex-shrink-0">
+            Drop on a section to move <strong className="text-stone-600">{sections[dragIdx]?.label}</strong> there
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
