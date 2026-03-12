@@ -3,6 +3,7 @@ import type { Song, Section, Line, ChordPosition, DisplayOptions } from '../type
 import { transposeSong, convertChordNotation, transposeChord, preferFlats } from '../lib/transpose';
 import { ChordDiagram } from './ChordDiagram';
 import { GripVertical } from 'lucide-react';
+import { uniqueChordCount } from '../lib/songStats';
 
 interface Props {
   song: Song;
@@ -58,6 +59,8 @@ export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
     ];
     onUpdateSong({ ...song, updatedAt: Date.now(), sections: newSections });
   }, [song, onUpdateSong]);
+
+  const chordCount = useMemo(() => uniqueChordCount(song), [song]);
 
   const sections = useMemo(() => {
     if (options.chorusMode === 'reference') {
@@ -248,6 +251,9 @@ export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
           )}
           {transposed.capo && options.showCapo && (
             <span>Capo: <strong className="text-stone-700">{transposed.capo}</strong></span>
+          )}
+          {chordCount > 0 && (
+            <span>{chordCount} chord{chordCount !== 1 ? 's' : ''}</span>
           )}
         </div>
       </div>
