@@ -71,19 +71,6 @@ export function OptionsPanel({ options, onChange, songKey, originalKey, onTransp
         />
       </OptionGroup>
 
-      {/* Chord notation */}
-      <OptionGroup label="Chord Notation" icon={<AlignLeft size={12} />}>
-        <ToggleGroup<NotationSystem>
-          options={['letters', 'nashville']}
-          value={options.notation}
-          onChange={v => onChange(set(options, 'notation', v))}
-          labels={{
-            letters: 'Letter Names',
-            nashville: 'Nashville  (1, 4, 5)',
-          }}
-        />
-      </OptionGroup>
-
       {/* Diagram style */}
       <OptionGroup label="Chord Diagrams" icon={<Image size={12} />}>
         <ToggleGroup<DiagramStyle>
@@ -96,6 +83,23 @@ export function OptionsPanel({ options, onChange, songKey, originalKey, onTransp
             none: 'None (chords over lyrics)',
           }}
         />
+        {options.diagramStyle === 'none' && (
+          <div className="mt-3 ml-3 pl-3 border-l-2 border-stone-200">
+            <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-stone-400 mb-2">
+              <AlignLeft size={11} />
+              Notation
+            </div>
+            <ToggleGroup<NotationSystem>
+              options={['letters', 'nashville']}
+              value={options.notation}
+              onChange={v => onChange(set(options, 'notation', v))}
+              labels={{
+                letters: 'Letter Names',
+                nashville: 'Nashville  (1, 4, 5)',
+              }}
+            />
+          </div>
+        )}
       </OptionGroup>
 
       {/* Chorus mode */}
