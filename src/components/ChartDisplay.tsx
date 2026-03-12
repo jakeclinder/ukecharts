@@ -23,14 +23,39 @@ export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
     newLines: Line[];
   } | null>(null);
 
-  // Section reorder panel: index of the section the user clicked to "pick up", or null
-  const [reorderPickedIdx, setReorderPickedIdx] = useState<number | null>(null);
+  // Section reorder panel open/closed
+  const [reorderPanelOpen, setReorderPanelOpen] = useState(false);
 
   const handleReorderSections = useCallback((fromIdx: number, toIdx: number) => {
     if (!onUpdateSong || fromIdx === toIdx) return;
     const newSections = [...song.sections];
     const [moved] = newSections.splice(fromIdx, 1);
     newSections.splice(toIdx, 0, moved);
+    onUpdateSong({ ...song, updatedAt: Date.now(), sections: newSections });
+  }, [song, onUpdateSong]);
+
+  const handleDeleteSection = useCallback((sectionIdx: number) => {
+    if (!onUpdateSong) return;
+    onUpdateSong({
+      ...song,
+      updatedAt: Date.now(),
+      sections: song.sections.filter((_, i) => i !== sectionIdx),
+    });
+  }, [song, onUpdateSong]);
+
+  const handleAddSection = useCallback((afterIdx: number, type: Section['type'], label: string) => {
+    if (!onUpdateSong) return;
+    const newSection: Section = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      type,
+      label,
+      lines: [{ lyrics: '', chords: [] }],
+    };
+    const newSections = [
+      ...song.sections.slice(0, afterIdx + 1),
+      newSection,
+      ...song.sections.slice(afterIdx + 1),
+    ];
     onUpdateSong({ ...song, updatedAt: Date.now(), sections: newSections });
   }, [song, onUpdateSong]);
 
@@ -245,22 +270,20 @@ export function ChartDisplay({ song, options, printRef, onUpdateSong }: Props) {
             onAddLine={onUpdateSong ? handleAddLine : undefined}
             onDeleteLine={onUpdateSong ? handleDeleteLine : undefined}
             onDuplicateSection={onUpdateSong ? handleDuplicateSection : undefined}
-            onGripClick={onUpdateSong ? (idx) => setReorderPickedIdx(idx) : undefined}
+            onGripClick={onUpdateSong ? () => setReorderPanelOpen(true) : undefined}
           />
         ))}
       </div>
 
       {/* Section reorder panel */}
-      {reorderPickedIdx !== null && (
+      {reorderPanelOpen && (
         <SectionReorderPanel
           sections={song.sections}
-          pickedIdx={reorderPickedIdx}
-          onMove={(from, to) => {
-            handleReorderSections(from, to);
-            setReorderPickedIdx(null);
-          }}
-          onPickChange={setReorderPickedIdx}
-          onClose={() => setReorderPickedIdx(null)}
+          onMove={handleReorderSections}
+          onDelete={handleDeleteSection}
+          onDuplicate={handleDuplicateSection}
+          onAdd={handleAddSection}
+          onClose={() => setReorderPanelOpen(false)}
         />
       )}
 
@@ -994,21 +1017,49 @@ const TYPE_COLORS: Record<string, string> = {
   other:         'bg-stone-100 text-stone-600',
 };
 
+const SECTION_TYPES: Section['type'][] = [
+  'verse', 'chorus', 'pre-chorus', 'bridge', 'intro', 'outro', 'tag', 'instrumental', 'other',
+];
+
+function autoLabel(type: Section['type'], sections: Section[]): string {
+  const existing = sections.filter(s => s.type === type);
+  const base = type.charAt(0).toUpperCase() + type.slice(1).replace('-', ' ');
+  return existing.length === 0 ? base : `${base} ${existing.length + 1}`;
+}
+
 function SectionReorderPanel({
   sections,
-  pickedIdx,
   onMove,
-  onPickChange,
+  onDelete,
+  onDuplicate,
+  onAdd,
   onClose,
 }: {
   sections: Section[];
-  pickedIdx: number;
   onMove: (fromIdx: number, toIdx: number) => void;
-  onPickChange: (idx: number) => void;
+  onDelete: (idx: number) => void;
+  onDuplicate: (idx: number) => void;
+  onAdd: (afterIdx: number, type: Section['type'], label: string) => void;
   onClose: () => void;
 }) {
-  const [dragIdx, setDragIdx] = useState<number | null>(pickedIdx);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  const [addingAfter, setAddingAfter] = useState<number | null>(null);
+  const [addType, setAddType] = useState<Section['type']>('verse');
+  const [addLabel, setAddLabel] = useState('');
+
+  const openAdd = (afterIdx: number) => {
+    setAddingAfter(afterIdx);
+    setAddType('verse');
+    setAddLabel(autoLabel('verse', sections));
+  };
+
+  const commitAdd = () => {
+    if (addingAfter === null) return;
+    onAdd(addingAfter, addType, addLabel.trim() || autoLabel(addType, sections));
+    setAddingAfter(null);
+  };
 
   return (
     <div
@@ -1016,14 +1067,14 @@ function SectionReorderPanel({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl p-5 w-80 max-h-[85vh] flex flex-col"
+        className="bg-white rounded-2xl shadow-2xl p-5 w-96 max-h-[85vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-4 flex-shrink-0">
           <div>
-            <h3 className="font-semibold text-stone-800 text-sm">Reorder Sections</h3>
-            <p className="text-xs text-stone-400 mt-0.5">Drag to rearrange, or click a section to pick it up</p>
+            <h3 className="font-semibold text-stone-800 text-sm">Manage Sections</h3>
+            <p className="text-xs text-stone-400 mt-0.5">Drag to reorder · duplicate · delete · add</p>
           </div>
           <button
             onClick={onClose}
@@ -1034,77 +1085,159 @@ function SectionReorderPanel({
         </div>
 
         {/* Section list */}
-        <div className="overflow-y-auto space-y-1.5">
+        <div className="overflow-y-auto space-y-1">
           {sections.map((section, idx) => {
             const isPicked = dragIdx === idx;
             const isOver = overIdx === idx && dragIdx !== null && dragIdx !== idx;
             const lyricsPreview = section.lines
-              .map(l => l.lyrics)
-              .filter(Boolean)
-              .join(' · ')
-              .slice(0, 45);
+              .map(l => l.lyrics).filter(Boolean).join(' · ').slice(0, 40);
+            const isConfirmingDelete = confirmDelete === idx;
 
             return (
-              <div
-                key={section.id}
-                draggable
-                onDragStart={e => {
-                  e.dataTransfer.effectAllowed = 'move';
-                  setDragIdx(idx);
-                  onPickChange(idx);
-                }}
-                onDragOver={e => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                  setOverIdx(idx);
-                }}
-                onDragLeave={() => setOverIdx(null)}
-                onDrop={e => {
-                  e.preventDefault();
-                  if (dragIdx !== null && dragIdx !== idx) onMove(dragIdx, idx);
-                  setDragIdx(null);
-                  setOverIdx(null);
-                }}
-                onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
-                onClick={() => {
-                  if (dragIdx === null) {
-                    setDragIdx(idx);
-                    onPickChange(idx);
-                  } else if (dragIdx !== idx) {
-                    onMove(dragIdx, idx);
-                  } else {
-                    setDragIdx(null);
-                  }
-                }}
-                className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition-all select-none ${
-                  dragIdx !== null && dragIdx !== idx
-                    ? 'cursor-copy'
-                    : 'cursor-grab active:cursor-grabbing'
-                } ${
-                  isPicked
-                    ? 'opacity-50 border-stone-300 bg-stone-50'
-                    : isOver
-                      ? 'border-amber-400 bg-amber-50 scale-[1.02]'
-                      : idx === pickedIdx && dragIdx === null
-                        ? 'border-amber-300 bg-amber-50/60'
-                        : 'border-transparent hover:border-stone-200 hover:bg-stone-50'
-                }`}
-              >
-                <GripVertical size={14} className="text-stone-300 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-stone-700 truncate">{section.label}</p>
-                  {lyricsPreview && (
-                    <p className="text-xs text-stone-400 truncate mt-0.5">
-                      {lyricsPreview}{lyricsPreview.length >= 45 ? '…' : ''}
-                    </p>
+              <div key={section.id}>
+                <div
+                  draggable
+                  onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; setDragIdx(idx); }}
+                  onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOverIdx(idx); }}
+                  onDragLeave={() => setOverIdx(null)}
+                  onDrop={e => {
+                    e.preventDefault();
+                    if (dragIdx !== null && dragIdx !== idx) onMove(dragIdx, idx);
+                    setDragIdx(null); setOverIdx(null);
+                  }}
+                  onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
+                  className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all select-none group ${
+                    isPicked
+                      ? 'opacity-40 border-stone-200 bg-stone-50'
+                      : isOver
+                        ? 'border-amber-400 bg-amber-50'
+                        : isConfirmingDelete
+                          ? 'border-red-300 bg-red-50'
+                          : 'border-transparent hover:border-stone-200 hover:bg-stone-50'
+                  }`}
+                >
+                  {/* Grip */}
+                  <GripVertical size={14} className="text-stone-300 flex-shrink-0 cursor-grab active:cursor-grabbing" />
+
+                  {/* Label + preview */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-stone-700 truncate">{section.label}</p>
+                    {lyricsPreview && !isConfirmingDelete && (
+                      <p className="text-xs text-stone-400 truncate">{lyricsPreview}{lyricsPreview.length >= 40 ? '…' : ''}</p>
+                    )}
+                    {isConfirmingDelete && (
+                      <p className="text-xs text-red-500">Delete this section?</p>
+                    )}
+                  </div>
+
+                  {/* Type badge */}
+                  <span className={`text-xs px-1.5 py-0.5 rounded-md font-medium flex-shrink-0 ${TYPE_COLORS[section.type] ?? TYPE_COLORS.other}`}>
+                    {section.type}
+                  </span>
+
+                  {/* Action buttons */}
+                  {isConfirmingDelete ? (
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => { onDelete(idx); setConfirmDelete(null); }}
+                        className="text-xs px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition-colors"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => setConfirmDelete(null)}
+                        className="text-xs px-2 py-1 text-stone-500 hover:bg-stone-100 rounded-lg transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => onDuplicate(idx)}
+                        className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+                        title="Duplicate section"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => setConfirmDelete(idx)}
+                        className="p-1.5 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="Delete section"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+                        </svg>
+                      </button>
+                    </div>
                   )}
                 </div>
-                <span className={`text-xs px-1.5 py-0.5 rounded-md font-medium flex-shrink-0 ${TYPE_COLORS[section.type] ?? TYPE_COLORS.other}`}>
-                  {section.type}
-                </span>
+
+                {/* Insert-after button */}
+                {addingAfter === idx ? (
+                  <div className="mx-2 my-1.5 p-3 bg-stone-50 border border-stone-200 rounded-xl space-y-2">
+                    <div className="flex gap-2">
+                      <select
+                        value={addType}
+                        onChange={e => {
+                          const t = e.target.value as Section['type'];
+                          setAddType(t);
+                          setAddLabel(autoLabel(t, sections));
+                        }}
+                        className="flex-1 text-xs border border-stone-300 rounded-lg px-2 py-1.5 outline-none focus:border-amber-400 bg-white"
+                      >
+                        {SECTION_TYPES.map(t => (
+                          <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1).replace('-', ' ')}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={addLabel}
+                        onChange={e => setAddLabel(e.target.value)}
+                        placeholder="Label…"
+                        className="flex-1 text-xs border border-stone-300 rounded-lg px-2 py-1.5 outline-none focus:border-amber-400"
+                        onKeyDown={e => { if (e.key === 'Enter') commitAdd(); if (e.key === 'Escape') setAddingAfter(null); }}
+                      />
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={commitAdd}
+                        className="flex-1 text-xs py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium transition-colors"
+                      >
+                        Add section
+                      </button>
+                      <button
+                        onClick={() => setAddingAfter(null)}
+                        className="text-xs px-3 py-1.5 text-stone-500 hover:bg-stone-200 rounded-lg transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => openAdd(idx)}
+                    className="w-full text-xs text-stone-300 hover:text-amber-600 hover:bg-amber-50 py-0.5 rounded-lg transition-colors opacity-0 hover:opacity-100 focus:opacity-100 group-hover/list:opacity-100"
+                    style={{ marginTop: '1px', marginBottom: '1px' }}
+                  >
+                    + insert after
+                  </button>
+                )}
               </div>
             );
           })}
+
+          {/* Add at end */}
+          {addingAfter === sections.length - 1 ? null : (
+            <button
+              onClick={() => openAdd(sections.length - 1)}
+              className="w-full text-xs text-stone-400 hover:text-amber-600 hover:bg-amber-50 py-2 rounded-xl border border-dashed border-stone-200 hover:border-amber-300 transition-colors mt-2"
+            >
+              + Add section at end
+            </button>
+          )}
         </div>
 
         {dragIdx !== null && (
