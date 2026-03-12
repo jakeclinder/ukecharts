@@ -51,6 +51,7 @@ function App() {
   const [versionNameInput, setVersionNameInput] = useState('');
   const [dropboxConnected, setDropboxConnected] = useState(() => isDropboxConnected());
   const [dropboxSyncing, setDropboxSyncing] = useState(false);
+  const [showCloudSetup, setShowCloudSetup] = useState(false);
 
   // ── Persist options ──────────────────────────────────────────────────────
   useEffect(() => { saveOptions(OPTIONS_KEY, options); }, [options]);
@@ -337,36 +338,38 @@ function App() {
         {activeSong && <ExportMenu song={activeSong} options={options} printRef={printRef} />}
 
         {/* ── Auth area ── */}
-        {supabaseEnabled && (
-          authLoading ? (
-            <Loader2 size={16} className="text-stone-400 animate-spin" />
-          ) : user ? (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 text-xs text-stone-500">
-                {syncing
-                  ? <Loader2 size={13} className="animate-spin text-amber-500" />
-                  : <Cloud size={13} className="text-green-500" />}
-                <span className="hidden sm:inline truncate max-w-[120px]">{user.email}</span>
-              </div>
-              <button onClick={signOut}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm text-stone-500 hover:bg-stone-100 rounded-xl transition-colors"
-                title="Sign out">
-                <LogOut size={14} />
-                <span className="hidden sm:inline">Sign out</span>
-              </button>
+        {authLoading ? (
+          <Loader2 size={16} className="text-stone-400 animate-spin" />
+        ) : user ? (
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 text-xs text-stone-500">
+              {syncing
+                ? <Loader2 size={13} className="animate-spin text-amber-500" />
+                : <Cloud size={13} className="text-green-500" />}
+              <span className="hidden sm:inline truncate max-w-[120px]">{user.email}</span>
             </div>
-          ) : (
-            <button onClick={() => setShowSignIn(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-600 text-sm font-medium rounded-xl transition-colors">
-              <LogIn size={14} />
-              Sign in
+            <button onClick={signOut}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm text-stone-500 hover:bg-stone-100 rounded-xl transition-colors"
+              title="Sign out">
+              <LogOut size={14} />
+              <span className="hidden sm:inline">Sign out</span>
             </button>
-          )
-        )}
-        {supabaseEnabled && !user && !authLoading && (
-          <div className="flex items-center gap-1 text-xs text-stone-400" title="Saving locally only">
-            <CloudOff size={13} />
           </div>
+        ) : supabaseEnabled ? (
+          <button onClick={() => setShowSignIn(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-600 text-sm font-medium rounded-xl transition-colors">
+            <LogIn size={14} />
+            Sign in
+          </button>
+        ) : (
+          <button
+            onClick={() => setShowCloudSetup(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs text-stone-400 hover:bg-stone-100 hover:text-stone-600 rounded-xl transition-colors"
+            title="Charts saved locally only — click to learn about cloud sync"
+          >
+            <CloudOff size={13} />
+            <span className="hidden sm:inline">Local only</span>
+          </button>
         )}
 
         {/* ── Dropbox ── */}
@@ -477,6 +480,70 @@ function App() {
       {/* ── Modals ── */}
       {showImport && <ImportModal onImport={handleImport} onClose={() => setShowImport(false)} />}
       {showSignIn && <SignInModal onClose={() => setShowSignIn(false)} />}
+
+      {/* Cloud setup guide */}
+      {showCloudSetup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowCloudSetup(false)}>
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-[480px] max-w-[95vw]" onClick={e => e.stopPropagation()}>
+            <h3 className="font-semibold text-stone-800 text-lg mb-1">Saving your charts</h3>
+            <p className="text-sm text-stone-500 mb-5">
+              Your charts are saved automatically in your browser and will survive closing the tab or restarting the browser.
+              To back them up across devices, enable one of the options below.
+            </p>
+
+            <div className="space-y-4">
+              {/* Option A: Supabase */}
+              <div className="border border-stone-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Cloud size={15} className="text-amber-500" />
+                  <span className="font-medium text-stone-800 text-sm">Cloud sync (sign-in)</span>
+                  <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">Recommended</span>
+                </div>
+                <p className="text-xs text-stone-500 mb-3">
+                  Syncs everything across devices. Requires a free Supabase account and adding credentials to a <code className="bg-stone-100 px-1 rounded">.env</code> file.
+                </p>
+                <ol className="text-xs text-stone-600 space-y-1 list-decimal list-inside">
+                  <li>Create a free project at <strong>supabase.com</strong></li>
+                  <li>Go to Project Settings → API and copy the URL and anon key</li>
+                  <li>Create a <code className="bg-stone-100 px-1 rounded">.env</code> file in the project root with:<br />
+                    <code className="block bg-stone-100 rounded px-2 py-1 mt-1 text-xs">
+                      VITE_SUPABASE_URL=https://xyz.supabase.co<br />
+                      VITE_SUPABASE_ANON_KEY=eyJ...
+                    </code>
+                  </li>
+                  <li>Run the SQL in <code className="bg-stone-100 px-1 rounded">supabase/schema.sql</code> in the Supabase SQL editor</li>
+                  <li>Restart the dev server — a <strong>Sign in</strong> button will appear</li>
+                </ol>
+              </div>
+
+              {/* Option B: Dropbox */}
+              <div className="border border-stone-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <HardDriveDownload size={15} className="text-blue-500" />
+                  <span className="font-medium text-stone-800 text-sm">Dropbox backup</span>
+                </div>
+                <p className="text-xs text-stone-500 mb-3">
+                  Backs up all charts to a JSON file in Dropbox. Requires a Dropbox developer app key.
+                </p>
+                <ol className="text-xs text-stone-600 space-y-1 list-decimal list-inside">
+                  <li>Go to <strong>dropbox.com/developers/apps</strong></li>
+                  <li>Create app → Scoped access → App folder</li>
+                  <li>Add your app URL under OAuth 2 → Redirect URIs</li>
+                  <li>Add to <code className="bg-stone-100 px-1 rounded">.env</code>: <code className="bg-stone-100 px-1 rounded">VITE_DROPBOX_APP_KEY=xxx</code></li>
+                  <li>Restart the dev server — a <strong>Connect Dropbox</strong> button will appear</li>
+                </ol>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowCloudSetup(false)}
+              className="mt-5 w-full py-2 text-sm text-stone-500 hover:bg-stone-100 rounded-lg transition-colors"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Save Version modal */}
       {showVersionModal && (
