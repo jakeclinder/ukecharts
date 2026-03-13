@@ -70,7 +70,7 @@ function htmlToText(html: string): string {
 }
 
 /**
- * Read a file as text (supports .txt, .pdf is not supported natively—falls back to raw)
+ * Read a file as text (supports .txt, .md)
  */
 export function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -79,6 +79,43 @@ export function readFileAsText(file: File): Promise<string> {
     reader.onerror = () => reject(new Error('Failed to read file'));
     reader.readAsText(file);
   });
+}
+
+/**
+ * Extract plain text from a PDF file using PDF.js.
+ * Concatenates all text items from every page, preserving line structure.
+ */
+export async function readPdfAsText(file: File): Promise<string> {
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.min.mjs',
+    import.meta.url
+  ).href;
+
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+  const pageTexts: string[] = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+
+    // Group text items into lines based on their vertical (y) position
+    const lineMap = new Map<number, string[]>();
+    for (const item of content.items) {
+      if (!('str' in item)) continue;
+      const y = Math.round((item as { transform: number[]; str: string }).transform[5]);
+      if (!lineMap.has(y)) lineMap.set(y, []);
+      lineMap.get(y)!.push((item as { str: string }).str);
+    }
+
+    // Sort lines top-to-bottom (descending y in PDF coords) and join
+    const sortedYs = [...lineMap.keys()].sort((a, b) => b - a);
+    const lines = sortedYs.map(y => lineMap.get(y)!.join(' ').trimEnd());
+    pageTexts.push(lines.join('\n'));
+  }
+
+  return pageTexts.join('\n\n').trim();
 }
 
 /**

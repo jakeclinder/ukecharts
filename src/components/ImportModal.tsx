@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { X, Link, FileText, Upload, Loader2 } from 'lucide-react';
-import { fetchChartFromUrl, readFileAsText, guessMetaFromUrl } from '../lib/importer';
+import { fetchChartFromUrl, readFileAsText, readPdfAsText, guessMetaFromUrl } from '../lib/importer';
 import { parseChartText } from '../lib/chordParser';
 import type { Song } from '../types';
 
@@ -49,7 +49,8 @@ export function ImportModal({ onImport, onClose }: Props) {
     setLoading(true);
     setError('');
     try {
-      const text = await readFileAsText(file);
+      const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
+      const text = isPdf ? await readPdfAsText(file) : await readFileAsText(file);
       const nameWithoutExt = file.name.replace(/\.[^.]+$/, '');
       const song = parseChartText(text, title || nameWithoutExt, artist);
       onImport(song);
@@ -161,16 +162,19 @@ export function ImportModal({ onImport, onClose }: Props) {
           {tab === 'file' && (
             <div className="space-y-3">
               <div
-                className="border-2 border-dashed border-stone-200 rounded-xl p-8 text-center cursor-pointer hover:border-amber-400 hover:bg-amber-50 transition-colors"
-                onClick={() => fileRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${loading ? 'border-amber-400 bg-amber-50 cursor-wait' : 'border-stone-200 cursor-pointer hover:border-amber-400 hover:bg-amber-50'}`}
+                onClick={() => !loading && fileRef.current?.click()}
               >
-                <Upload size={24} className="mx-auto text-stone-400 mb-2" />
-                <p className="text-sm text-stone-500">Click to choose a file</p>
-                <p className="text-xs text-stone-400 mt-1">.txt, .text files supported</p>
+                {loading
+                  ? <Loader2 size={24} className="mx-auto text-amber-500 mb-2 animate-spin" />
+                  : <Upload size={24} className="mx-auto text-stone-400 mb-2" />
+                }
+                <p className="text-sm text-stone-500">{loading ? 'Reading file…' : 'Click to choose a file'}</p>
+                <p className="text-xs text-stone-400 mt-1">.txt, .text, .pdf files supported</p>
                 <input
                   ref={fileRef}
                   type="file"
-                  accept=".txt,.text,.md"
+                  accept=".txt,.text,.md,.pdf"
                   className="hidden"
                   onChange={handleFile}
                 />
